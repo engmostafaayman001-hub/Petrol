@@ -1,0 +1,10 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import PageLayout from '../../src/components/PageLayout';
+import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
+import { useRequireAuth } from '../../src/lib/auth';
+type Row = { fuel_type_id?: string; fuel_code?: string; fuel_name?: string; delivered?: number; sold?: number; variance?: number };
+export default function DailyReport() {
+  useRequireAuth(); const [rows, setRows] = useState<Row[]>([]); const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10)); const [state, setState] = useState<'loading'|'ready'|'error'>('loading');
+  const load = useCallback(async () => { setState('loading'); try { const r = await fetch('/api/reports/daily?date=' + date); if (!r.ok) throw new Error(); const d = await r.json(); setRows(d.rows || []); setState('ready'); } catch { setState('error'); } }, [date]); useEffect(() => { load(); }, [load]);
+  return <PageLayout title="التقارير"><div className="page-heading"><div><h2>التقرير اليومي</h2><p>ملخص حركة الوقود المسجلة حسب النوع.</p></div></div><section className="ui-card"><div className="ui-toolbar"><label className="form-field flex items-center gap-3"><span className="whitespace-nowrap text-sm font-bold">تاريخ التقرير</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><button className="ui-button secondary" onClick={load}>تحديث</button></div>{state === 'loading' ? <LoadingState /> : state === 'error' ? <ErrorState onRetry={load} /> : rows.length === 0 ? <EmptyState title="لا توجد حركة لهذا اليوم" description="اختر تاريخاً آخر أو أضف عمليات بيع وتوريد." /> : <div className="table-scroll"><table className="data-table"><thead><tr><th>الكود</th><th>الوقود</th><th>التوريدات</th><th>المبيعات</th><th>الفرق</th></tr></thead><tbody>{rows.map((r) => <tr key={r.fuel_type_id || r.fuel_code}><td>{r.fuel_code || '—'}</td><td>{r.fuel_name || '—'}</td><td>{r.delivered ?? 0} لتر</td><td>{r.sold ?? 0} لتر</td><td>{r.variance ?? 0} لتر</td></tr>)}</tbody></table></div>}</section></PageLayout>;
+}

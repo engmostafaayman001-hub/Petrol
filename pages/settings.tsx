@@ -1,0 +1,7 @@
+import React from 'react';
+import Link from 'next/link';
+import PageLayout from '../src/components/PageLayout';
+import ThemeToggle from '../src/components/ThemeToggle';
+import { useAuth, useRequireAuth } from '../src/lib/auth';
+const sections = [{ href: '/settings/station', title: 'إعدادات المحطة', text: 'بيانات المحطة والموقع والعملة.' }, { href: '/settings/tanks', title: 'الخزانات', text: 'إضافة الخزانات وحدود التشغيل.' }, { href: '/settings/fuels', title: 'أنواع الوقود', text: 'الأنواع والأسعار والألوان.' }, { href: '/users', title: 'المستخدمون والصلاحيات', text: 'أدوار الفريق وإدارة الحسابات.' }];
+export default function SettingsPage() { useRequireAuth(); const { signOut, user } = useAuth(); return <PageLayout title="الإعدادات"><div className="page-heading"><div><h2>الإعدادات</h2><p>إدارة بيانات المحطة وتفضيلات النظام.</p></div></div><div className="settings-grid">{sections.map(section => <Link key={section.href} href={section.href} className="ui-card settings-link"><h3>{section.title}</h3><p>{section.text}</p><span>فتح الصفحة ←</span></Link>)}<section className="ui-card settings-link"><h3>المظهر</h3><p>اختَر الوضع الفاتح أو الداكن؛ يتم حفظ اختيارك تلقائيًا.</p><ThemeToggle /></section><section className="ui-card settings-link"><h3>الحساب</h3><p>{user?.email || 'الحساب الحالي'}</p><button className="ui-button danger" onClick={() => signOut()}>تسجيل الخروج</button></section></div></PageLayout>; }
