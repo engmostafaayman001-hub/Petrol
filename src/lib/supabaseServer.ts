@@ -25,16 +25,16 @@ function makeMockClient() {
 export function getServiceSupabase(): SupabaseClient {
   if (svc) return svc;
 
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !key) {
-    // During build (or tests) environment may not have Supabase keys; return a harmless mock
-    // so static page generation doesn't crash. Real runtime requires proper env vars.
-    // eslint-disable-next-line no-console
-    console.warn('getServiceSupabase: SUPABASE env not set, using mock client for build-time.');
-    svc = makeMockClient();
-    return svc;
+    if (process.env.NODE_ENV === 'test' || process.env.CI) {
+      svc = makeMockClient();
+      return svc;
+    }
+
+    throw new Error('Missing Supabase service-role configuration. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the runtime environment.');
   }
 
   svc = createClient(url, key, {

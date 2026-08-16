@@ -2,24 +2,29 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import PageLayout from '../../src/components/PageLayout';
 import { useRequireAuth } from '../../src/lib/auth';
-import { z } from 'zod';
 import FormField from '../../src/components/FormField';
-
-const DEMO_STATION = (process.env.NEXT_PUBLIC_DEMO_STATION_ID || '11111111-1111-4111-8111-111111111111').trim();
+import { useCurrentStationId } from '../../src/lib/station';
 
 export default function NewDelivery() {
-  useRequireAuth();
+  const { user } = useRequireAuth();
   const router = useRouter();
+  const stationId = useCurrentStationId(user?.id ?? null);
   const [tanks, setTanks] = useState<any[]>([]);
-  const [form, setForm] = useState<any>({ station_id: DEMO_STATION, tank_id: '', business_date: '', supplier_id: '', quantity: '' });
+  const [form, setForm] = useState<any>({ station_id: '', tank_id: '', business_date: '', supplier_id: '', quantity: '' });
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/tanks?stationId=${DEMO_STATION}`)
+    if (!stationId) {
+      setTanks([]);
+      return;
+    }
+
+    setForm((current: any) => ({ ...current, station_id: stationId }));
+    fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`)
       .then((r) => r.json())
       .then((d) => setTanks(d.tanks || []))
-      .catch(() => {});
-  }, []);
+      .catch(() => setTanks([]));
+  }, [stationId]);
 
   function update(k: string, v: any) { setForm((s: any) => ({ ...s, [k]: v })); }
 
@@ -27,10 +32,10 @@ export default function NewDelivery() {
     e.preventDefault();
     setMessage(null);
 
-    const stationId = (form.station_id || DEMO_STATION || '').trim();
+    const stationIdValue = (form.station_id || stationId || '').trim();
     const quantity = Number(form.quantity);
 
-    if (!stationId || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(stationId)) {
+    if (!stationIdValue || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(stationIdValue)) {
       setMessage('معرف المحطة غير صالح');
       return;
     }
@@ -40,7 +45,7 @@ export default function NewDelivery() {
       return;
     }
 
-    const payload = { station_id: stationId, tank_id: form.tank_id, fuel_type_id: form.fuel_type_id || undefined, business_date: form.business_date, supplier_id: form.supplier_id || undefined, quantity };
+    const payload = { station_id: stationIdValue, tank_id: form.tank_id, fuel_type_id: form.fuel_type_id || undefined, business_date: form.business_date, supplier_id: form.supplier_id || undefined, quantity };
     const res = await fetch('/api/deliveries/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const body = await res.json();
     if (!res.ok) {

@@ -7,8 +7,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { session_id } = req.body;
     if (!session_id) return res.status(400).json({ error: 'session_id required' });
     const supabase = getServiceSupabase();
-    const { data, error } = await supabase.rpc('fn_submit_reconciliation', { p_reconciliation_session_id: session_id });
-    if (error) return res.status(500).json({ error: error.message });
+    const { data, error } = await supabase.rpc('fn_submit_reconciliation', { p_session_id: session_id, p_notes: null });
+    if (error) return res.status(400).json({ error: error.message, details: error.details ?? null, hint: error.hint ?? null });
     return res.status(200).json({ result: data });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

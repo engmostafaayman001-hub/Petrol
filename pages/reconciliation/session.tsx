@@ -1,64 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import PageLayout from '../../src/components/PageLayout';
 import { useRequireAuth } from '../../src/lib/auth';
 
 export default function SessionPage() {
-  const router = useRouter();
-  useRequireAuth();
-  const { sessionId } = router.query;
-  const [session, setSession] = useState<any>(null);
-  const [lines, setLines] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    fetch('/api/reconciliation/detail?sessionId=' + sessionId)
-      .then((r) => r.json())
-      .then((d) => {
-        setSession(d.session);
-        setLines(d.lines || []);
-      })
-      .catch(() => {});
-  }, [sessionId]);
-
-  if (!session) return <PageLayout title="التسوية"> <div>جارٍ التحميل...</div> </PageLayout>;
-
-  return (
-    <PageLayout title={`التسوية ${session.business_date}`}>
-      <h2 className="text-xl font-semibold mb-4 text-right">{session.business_date} · {session.shift_code}</h2>
-      <div className="space-y-3">
-        {lines.map((l) => (
-          <ReconciliationLine key={l.id} line={l} sessionId={session.id} />
-        ))}
-      </div>
-
-      <div className="mt-6 text-right">
-        <button className="bg-primary text-white px-4 py-2 rounded" onClick={async () => { const res = await fetch('/api/reconciliation/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: session.id }) }); const b = await res.json(); if (res.ok) alert('تم إرسال التسوية'); else alert(b.error || 'فشل'); }}>إرسال الجلسة</button>
-      </div>
-    </PageLayout>
-  );
+  const router = useRouter(); useRequireAuth(); const { sessionId } = router.query;
+  const [session, setSession] = useState<any>(null); const [lines, setLines] = useState<any[]>([]); const [cashByFuel, setCashByFuel] = useState<any[]>([]); const [message, setMessage] = useState('');
+  const load = useCallback(async () => { if (!sessionId) return; const response = await fetch('/api/reconciliation/detail?sessionId=' + sessionId); const data = await response.json(); if (response.ok) { setSession(data.session); setLines(data.lines || []); setCashByFuel(data.cashByFuel || []); } }, [sessionId]);
+  useEffect(() => { load().catch(() => {}); }, [load]);
+  if (!session) return <PageLayout title="التسوية"><div>جارٍ تحميل الجلسة...</div></PageLayout>;
+  return <PageLayout title={`التسوية ${session.business_date}`}><div className="page-heading"><div><h2>{session.business_date} · {session.shift_code}</h2><p>الحسابات تُحدّث تلقائياً مع كل بيع أو قراءة من الكنترول.</p></div><button className="ui-button secondary" onClick={load}>تحديث</button></div>
+    <section className="ui-card p-5 mb-5"><div className="flex items-center justify-between gap-4"><div><b>إجمالي المقبوضات في هذه الجلسة</b><p className="mt-1 text-sm text-[var(--text-muted)]">تبدأ الجلسة الجديدة من صفر، ولا تشمل مبيعات الورديات السابقة.</p></div><strong className="text-2xl text-[var(--text-heading)]">{Number(session.total_collected || 0).toLocaleString('ar-EG')} ج.م</strong></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{cashByFuel.length ? cashByFuel.map((fuel) => <div key={fuel.fuel_type_id} className="rounded-xl bg-[var(--surface-soft)] p-3"><b>{fuel.fuel_name}</b><small className="block mt-1 text-[var(--text-muted)]">{Number(fuel.quantity).toLocaleString('ar-EG')} لتر مباع</small><strong className="block mt-2">{Number(fuel.collected).toLocaleString('ar-EG')} ج.م</strong></div>) : <small className="text-[var(--text-muted)]">لا توجد مبيعات مسجلة في هذه الجلسة حتى الآن.</small>}</div></section>
+    <div className="space-y-3">{lines.map((line) => <ReconciliationLine key={line.id} line={line} sessionId={session.id} onSaved={load} />)}</div>
+    <div className="mt-6 text-right"><button className="ui-button" onClick={async () => { setMessage(''); const response = await fetch('/api/reconciliation/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: session.id }) }); const data = await response.json(); if (response.ok) router.replace('/reconciliation'); else setMessage(data.error || 'تعذر إغلاق الجلسة.'); }}>إغلاق الجلسة وتثبيت الحساب</button>{message && <p className="mt-3 text-sm text-red-600">{message}</p>}</div>
+  </PageLayout>;
 }
 
-function ReconciliationLine({ line, sessionId }: { line: any; sessionId: string }) {
-  const [value, setValue] = useState<string>(line.actual_closing_qty ? String(line.actual_closing_qty) : '');
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    const res = await fetch('/api/reconciliation/record', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, tank_id: line.tank_id, actual_closing_qty: Number(value) }) });
-    const b = await res.json();
-    setSaving(false);
-    if (!res.ok) alert(b.error || 'فشل الحفظ'); else alert('تم الحفظ');
-  }
-
-  return (
-    <div className="p-3 bg-surface rounded shadow-sm text-right">
-      <div className="font-medium">{line.tank_code} — {line.fuel_name}</div>
-      <div className="text-sm text-muted">المتوقع: {line.expected_closing_qty} · الفارق الحالي: {line.variance_qty ?? '—'}</div>
-      <div className="mt-2 flex gap-2 justify-end">
-        <input value={value} onChange={(e) => setValue(e.target.value)} className="border rounded px-3 py-2 w-40 text-right" placeholder="الكمية الفعلية" />
-        <button onClick={save} disabled={saving} className="bg-accent text-white px-3 py-2 rounded">حفظ</button>
-      </div>
-    </div>
-  );
+function ReconciliationLine({ line, sessionId, onSaved }: { line: any; sessionId: string; onSaved: () => void }) {
+  const [value, setValue] = useState(line.actual_closing_qty === null || line.actual_closing_qty === undefined ? '' : String(line.actual_closing_qty)); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
+  async function save() { setSaving(true); setError(''); const response = await fetch('/api/reconciliation/record', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, tank_id: line.tank_id, actual_closing_qty: Number(value) }) }); const data = await response.json().catch(() => ({})); setSaving(false); if (response.ok) onSaved(); else setError(data.error || 'تعذر حفظ قراءة الخزان.'); }
+  return <div className="ui-card p-4 text-right"><div className="flex items-center justify-between gap-3"><div><b>{line.tank_code} — {line.fuel_name}</b><p className="mt-1 text-sm text-[var(--text-muted)]">المتوقع: {line.expected_closing_qty} لتر · الفرق: {line.variance_qty ?? '—'}</p></div><div className="flex gap-2"><input type="number" min="0" value={value} onChange={(e) => setValue(e.target.value)} className="w-36 rounded border px-3 py-2 text-right" placeholder="الكمية الفعلية" /><button onClick={save} disabled={saving || value === ''} className="ui-button">{saving ? 'جارٍ الحفظ' : 'حفظ'}</button></div></div>{error && <p className="mt-2 text-sm text-red-600">{error}</p>}</div>;
 }

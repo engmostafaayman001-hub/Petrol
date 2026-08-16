@@ -1,31 +1,81 @@
 import React, { useEffect, useState } from 'react';
 import PageLayout from '../../src/components/PageLayout';
 import { useRequireAuth } from '../../src/lib/auth';
+import { useCurrentStationId } from '../../src/lib/station';
+import supabase from '../../src/lib/supabaseClient';
 
-const DEMO_STATION = (process.env.NEXT_PUBLIC_DEMO_STATION_ID || '11111111-1111-4111-8111-111111111111').trim();
+type ShiftOption = { id: string; code: string; name: string; seq: number };
 
 export default function ReconciliationIndex() {
-  useRequireAuth();
+  const { user } = useRequireAuth();
+  const stationId = useCurrentStationId(user?.id ?? null);
   const [sessions, setSessions] = useState<any[]>([]);
   const [date, setDate] = useState<string>('');
-  const [shift, setShift] = useState<string>('morning');
+  const [shift, setShift] = useState<string>('');
+  const [availableShifts, setAvailableShifts] = useState<ShiftOption[]>([]);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/reconciliation/list?stationId=' + DEMO_STATION)
+    if (!stationId) {
+      setSessions([]);
+      setAvailableShifts([]);
+      setShift('');
+      return;
+    }
+
+    supabase
+      .from('shifts')
+      .select('id, code, name, seq')
+      .eq('station_id', stationId)
+      .eq('is_active', true)
+      .order('seq', { ascending: true })
+      .then((result: { data: ShiftOption[] | null; error: { message?: string } | null }) => {
+        const rows = (result.data || []) as ShiftOption[];
+        setAvailableShifts(rows);
+        if (rows.length > 0) {
+          const firstShiftId = rows[0]?.id;
+          if (firstShiftId) {
+            setShift((current) => current || firstShiftId);
+          }
+        }
+      });
+
+    fetch(`/api/reconciliation/list?stationId=${encodeURIComponent(stationId)}`)
       .then((r) => r.json())
       .then((d) => setSessions(d.sessions || []))
-      .catch(() => {});
-  }, []);
+      .catch(() => setSessions([]));
+  }, [stationId]);
 
   async function openSession(e: React.FormEvent) {
     e.preventDefault();
     setMessage(null);
-    const res = await fetch('/api/reconciliation/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ station_id: DEMO_STATION, business_date: date, shift_id: shift }) });
+    if (!stationId) {
+      setMessage('لا توجد محطة مرتبطة بهذا الحساب');
+      return;
+    }
+
+    if (!shift) {
+      setMessage('لا توجد وردية فعالة لهذه المحطة');
+      return;
+    }
+
+    const res = await fetch('/api/reconciliation/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ station_id: stationId, business_date: date, shift_id: shift }),
+    });
+
     const body = await res.json();
-    if (!res.ok) setMessage(body.error || 'فشل'); else setMessage('تم فتح الجلسة');
-    // refresh
-    fetch('/api/reconciliation/list?stationId=' + DEMO_STATION).then((r) => r.json()).then((d) => setSessions(d.sessions || [])).catch(() => {});
+    if (!res.ok) {
+      setMessage(body?.error || 'فشل فتح الجلسة');
+      return;
+    }
+
+    setMessage('تم فتح الجلسة');
+    fetch(`/api/reconciliation/list?stationId=${encodeURIComponent(stationId)}`)
+      .then((r) => r.json())
+      .then((d) => setSessions(d.sessions || []))
+      .catch(() => setSessions([]));
   }
 
   return (
@@ -39,8 +89,9 @@ export default function ReconciliationIndex() {
         <div>
           <label className="block text-right">الوردية</label>
           <select value={shift} onChange={(e) => setShift(e.target.value)} className="w-full border rounded px-3 py-2">
-            <option value="morning">صباحية</option>
-            <option value="evening">مسائية</option>
+            {availableShifts.length === 0 ? <option value="">لا توجد ورديات</option> : availableShifts.map((item) => (
+              <option key={item.id} value={item.id}>{item.name || item.code}</option>
+            ))}
           </select>
         </div>
         <div className="text-right">

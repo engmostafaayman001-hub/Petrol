@@ -4,22 +4,28 @@ import PageLayout from '../../src/components/PageLayout';
 import { useRequireAuth } from '../../src/lib/auth';
 import FormField from '../../src/components/FormField';
 import { z } from 'zod';
-
-const DEMO_STATION = (process.env.NEXT_PUBLIC_DEMO_STATION_ID || '11111111-1111-4111-8111-111111111111').trim();
+import { useCurrentStationId } from '../../src/lib/station';
 
 export default function NewSale() {
-  useRequireAuth();
+  const { user } = useRequireAuth();
   const router = useRouter();
+  const stationId = useCurrentStationId(user?.id ?? null);
   const [tanks, setTanks] = useState<any[]>([]);
-  const [form, setForm] = useState<any>({ station_id: DEMO_STATION, tank_id: '', business_date: '', shift_id: '', quantity: '' });
+  const [form, setForm] = useState<any>({ station_id: '', tank_id: '', business_date: '', shift_id: '', quantity: '' });
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/tanks?stationId=${DEMO_STATION}`)
+    if (!stationId) {
+      setTanks([]);
+      return;
+    }
+
+    setForm((current: any) => ({ ...current, station_id: stationId }));
+    fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`)
       .then((r) => r.json())
       .then((d) => setTanks(d.tanks || []))
-      .catch(() => {});
-  }, []);
+      .catch(() => setTanks([]));
+  }, [stationId]);
 
   function update(k: string, v: any) {
     setForm((s: any) => ({ ...s, [k]: v }));

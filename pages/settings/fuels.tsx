@@ -5,6 +5,7 @@ import FormField from '../../src/components/FormField';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
 import supabase from '../../src/lib/supabaseClient';
 import { useRequireAuth } from '../../src/lib/auth';
+import { useCurrentStationId } from '../../src/lib/station';
 
 type FuelType = {
   id: string;
@@ -18,7 +19,6 @@ type FuelType = {
   notes?: string | null;
 };
 
-const STATION_ID = (process.env.NEXT_PUBLIC_DEMO_STATION_ID || '11111111-1111-4111-8111-111111111111').trim();
 const blankForm = {
   code: '',
   name: '',
@@ -31,20 +31,28 @@ const blankForm = {
 };
 
 export default function FuelSettings() {
-  useRequireAuth();
+  const { user } = useRequireAuth();
+  const stationId = useCurrentStationId(user?.id ?? null);
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [form, setForm] = useState<typeof blankForm>(blankForm);
   const [editing, setEditing] = useState<FuelType | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const loadFuelTypes = useCallback(async () => {
+    if (!stationId) {
+      setFuelTypes([]);
+      setState('ready');
+      return;
+    }
+
     setState('loading');
     try {
       const { data, error } = await supabase
         .from('fuel_types')
         .select('id,code,name,selling_price,purchase_price,color_hex,sort_order,is_active,notes')
-        .eq('station_id', STATION_ID)
+        .eq('station_id', stationId)
         .order('sort_order', { ascending: true });
       if (error) throw error;
       setFuelTypes(data || []);
@@ -52,7 +60,7 @@ export default function FuelSettings() {
     } catch {
       setState('error');
     }
-  }, []);
+  }, [stationId]);
 
   useEffect(() => {
     loadFuelTypes();
@@ -62,8 +70,13 @@ export default function FuelSettings() {
     event.preventDefault();
     setMessage('');
 
+    if (!stationId) {
+      setMessage('لا توجد محطة مرتبطة بهذا الحساب.');
+      return;
+    }
+
     const payload = {
-      station_id: STATION_ID,
+      station_id: stationId,
       code: form.code.trim().toUpperCase(),
       name: form.name.trim(),
       selling_price: Number(form.selling_price) || 0,
@@ -78,6 +91,10 @@ export default function FuelSettings() {
       setMessage('يجب إدخال الكود والاسم.');
       return;
     }
+    if (payload.selling_price < 0 || payload.purchase_price < 0) {
+      setMessage('لا يمكن أن يكون سعر البيع أو الشراء سالباً.');
+      return;
+    }
 
     try {
       const query = editing
@@ -88,15 +105,21 @@ export default function FuelSettings() {
       setMessage(editing ? 'تم تحديث نوع الوقود.' : 'تمت إضافة نوع الوقود.');
       setForm(blankForm);
       setEditing(null);
+      setEditorOpen(false);
       await loadFuelTypes();
     } catch (err: any) {
-      setMessage(err?.message || 'فشل حفظ نوع الوقود.');
+      setMessage(err?.message || 'تعذر حفظ نوع الوقود. تأكد من صلاحية المدير وعدم تكرار الكود.');
     }
   }
 
   async function removeFuelType(fuel: FuelType) {
     if (!window.confirm(`هل تريد حذف نوع الوقود ${fuel.name} نهائياً؟`)) return;
     setMessage('');
+    const { count } = await supabase.from('tanks').select('id', { count: 'exact', head: true }).eq('fuel_type_id', fuel.id);
+    if (count && count > 0) {
+      setMessage('لا يمكن حذف هذا النوع لأنه مرتبط بخزان. عطّل الخزانات أو غيّر نوع وقودها أولاً.');
+      return;
+    }
     const { error } = await supabase.from('fuel_types').delete().eq('id', fuel.id);
     if (error) {
       setMessage(error.message);
@@ -119,6 +142,7 @@ export default function FuelSettings() {
       notes: fuel.notes || '',
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditorOpen(true);
   }
 
   function resetForm() {
@@ -137,9 +161,10 @@ export default function FuelSettings() {
         <Link className="ui-button secondary" href="/settings">
           العودة للإعدادات
         </Link>
+        <button type="button" className="ui-button" onClick={() => { resetForm(); setEditorOpen(true); }}>إضافة نوع وقود</button>
       </div>
 
-      <form onSubmit={submit} className="ui-card form-card form-grid">
+      {editorOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={() => setEditorOpen(false)}><form onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} className="ui-card form-card form-grid modal-card">
         <h3 className="text-xl font-semibold">{editing ? 'تعديل نوع الوقود' : 'إضافة نوع وقود جديد'}</h3>
 
         <FormField label="الكود">
@@ -224,15 +249,13 @@ export default function FuelSettings() {
             <button className="ui-button" type="submit">
               {editing ? 'حفظ التعديلات' : 'إضافة نوع الوقود'}
             </button>
-            {editing && (
-              <button type="button" className="ui-button secondary" onClick={resetForm}>
+            <button type="button" className="ui-button secondary" onClick={() => { resetForm(); setEditorOpen(false); }}>
                 إلغاء
-              </button>
-            )}
+            </button>
           </div>
           {message && <p className="text-sm text-[var(--text-muted)]">{message}</p>}
         </div>
-      </form>
+      </form></div>}
 
       <section className="ui-card mt-6">
         <div className="flex flex-col gap-4">

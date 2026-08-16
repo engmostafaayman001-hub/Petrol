@@ -1,12 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PageLayout from '../../src/components/PageLayout';
 import FormField from '../../src/components/FormField';
 import { useRequireAuth } from '../../src/lib/auth';
 import { z } from 'zod';
+import { useCurrentStationId } from '../../src/lib/station';
 
 export default function NewAdjustment() {
-  useRequireAuth();
-  const [form, setForm] = useState<any>({ station_id: process.env.NEXT_PUBLIC_DEMO_STATION_ID, tank_id: '', reason: '', quantity: '' });
+  const { user } = useRequireAuth();
+  const stationId = useCurrentStationId(user?.id ?? null);
+  const [form, setForm] = useState<any>({ station_id: '', tank_id: '', reason: '', quantity: '' });
+
+  useEffect(() => {
+    if (stationId) {
+      setForm((current: any) => ({ ...current, station_id: stationId }));
+    }
+  }, [stationId]);
   const [message, setMessage] = useState<string | null>(null);
 
   function update(k: string, v: any) { setForm((s: any) => ({ ...s, [k]: v })); }

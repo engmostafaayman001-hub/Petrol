@@ -418,6 +418,9 @@ export interface StationSnapshot {
     variance: number;
     delivery_count: number;
     sale_count: number;
+    total_collected: number;
+    total_cost: number;
+    total_profit: number;
   };
   reconciliation: {
     sessions: number;
@@ -448,6 +451,13 @@ export interface StationSnapshot {
     critical_alerts: number;
     unreconciled_periods: number;
   };
+  trend: Array<{
+    business_date: string;
+    delivered: number;
+    sold: number;
+    variance: number;
+    closing_stock: number;
+  }>;
   worst_variance: {
     tank_code: string;
     fuel_name: string;

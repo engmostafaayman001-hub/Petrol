@@ -1,0 +1,11 @@
+{
+  "name": "PETROL - إدارة محطات الوقود",
+  "short_name": "PETROL",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07162c",
+  "theme_color": "#1769f5",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [{ "src": "/petrol-station.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

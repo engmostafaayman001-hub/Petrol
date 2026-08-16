@@ -192,3 +192,37 @@ export function fillPercent(quantity: number, capacity: number): number {
   if (capacity <= 0) return 0;
   return Math.min(100, Math.max(0, roundVolume((quantity / capacity) * 100)));
 }
+
+export function sumTankStock(
+  tanks: Array<{ system_quantity?: number; current_qty?: number; current_stock?: number; available_quantity?: number }>,
+): number {
+  const total = tanks.reduce((sum, tank) => {
+    const quantity = Number(
+      tank.system_quantity ?? tank.current_qty ?? tank.current_stock ?? tank.available_quantity ?? 0,
+    );
+    return sum + (Number.isFinite(quantity) ? quantity : 0);
+  }, 0);
+
+  return roundVolume(total);
+}
+
+export function aggregateCollectedAndProfit(
+  sales: Array<{ gross_amount?: number; unit_price?: number; quantity?: number }> = [],
+  deliveries: Array<{ quantity?: number; unit_cost?: number }> = [],
+) {
+  const collected = sales.reduce((sum, sale) => {
+    const gross = Number(sale.gross_amount ?? ((sale.unit_price ?? 0) * (sale.quantity ?? 0)));
+    return sum + (Number.isFinite(gross) ? gross : 0);
+  }, 0);
+
+  const cost = deliveries.reduce((sum, delivery) => {
+    const totalCost = Number((delivery.unit_cost ?? 0) * (delivery.quantity ?? 0));
+    return sum + (Number.isFinite(totalCost) ? totalCost : 0);
+  }, 0);
+
+  return {
+    collected: roundVolume(collected),
+    cost: roundVolume(cost),
+    profit: roundVolume(collected - cost),
+  };
+}

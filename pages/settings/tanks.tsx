@@ -5,6 +5,7 @@ import FormField from '../../src/components/FormField';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
 import supabase from '../../src/lib/supabaseClient';
 import { useRequireAuth } from '../../src/lib/auth';
+import { useCurrentStationId } from '../../src/lib/station';
 
 type FuelTypeOption = { id: string; name: string; code: string };
 type Tank = {
@@ -21,7 +22,6 @@ type Tank = {
   notes?: string | null;
 };
 
-const STATION_ID = (process.env.NEXT_PUBLIC_DEMO_STATION_ID || '11111111-1111-4111-8111-111111111111').trim();
 const blankForm = {
   code: '',
   name: '',
@@ -42,27 +42,36 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function TankSettings() {
-  useRequireAuth();
+  const { user } = useRequireAuth();
+  const stationId = useCurrentStationId(user?.id ?? null);
   const [fuelTypes, setFuelTypes] = useState<FuelTypeOption[]>([]);
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [form, setForm] = useState<typeof blankForm>(blankForm);
   const [editing, setEditing] = useState<Tank | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const loadData = useCallback(async () => {
+    if (!stationId) {
+      setFuelTypes([]);
+      setTanks([]);
+      setState('ready');
+      return;
+    }
+
     setState('loading');
     try {
       const [fuelTypeResult, tankResult] = await Promise.all([
         supabase
           .from('fuel_types')
           .select('id,name,code')
-          .eq('station_id', STATION_ID)
+          .eq('station_id', stationId)
           .order('sort_order', { ascending: true }),
         supabase
           .from('tanks')
           .select('id,code,name,fuel_type_id,capacity,max_operating_level,min_safe_level,dead_stock,status,is_active,notes')
-          .eq('station_id', STATION_ID)
+          .eq('station_id', stationId)
           .order('code', { ascending: true }),
       ]);
 
@@ -76,7 +85,7 @@ export default function TankSettings() {
     } catch {
       setState('error');
     }
-  }, []);
+  }, [stationId]);
 
   useEffect(() => {
     loadData();
@@ -86,49 +95,62 @@ export default function TankSettings() {
     event.preventDefault();
     setMessage('');
 
+    if (!stationId) {
+      setMessage('لا توجد محطة مرتبطة بهذا الحساب.');
+      return;
+    }
+
+    const capacity = Number(form.capacity);
+    const maxOperatingLevel = form.max_operating_level === '' ? capacity : Number(form.max_operating_level);
+    const minSafeLevel = form.min_safe_level === '' ? 0 : Number(form.min_safe_level);
+    const deadStock = form.dead_stock === '' ? 0 : Number(form.dead_stock);
     const payload = {
-      station_id: STATION_ID,
+      station_id: stationId,
       code: form.code.trim().toUpperCase(),
       name: form.name.trim(),
       fuel_type_id: form.fuel_type_id,
-      capacity: Number(form.capacity) || 0,
-      max_operating_level: Number(form.max_operating_level) || 0,
-      min_safe_level: Number(form.min_safe_level) || 0,
-      dead_stock: Number(form.dead_stock) || 0,
+      capacity,
+      max_operating_level: maxOperatingLevel,
+      min_safe_level: minSafeLevel,
+      dead_stock: deadStock,
       status: form.status,
       is_active: form.is_active,
       notes: form.notes.trim() || null,
     };
 
-    if (!payload.code || !payload.name || payload.capacity <= 0) {
-      setMessage('يجب إدخال الكود والاسم والسعة.');
+    if (!payload.code || !payload.name || !payload.fuel_type_id || !Number.isFinite(payload.capacity) || payload.capacity <= 0) {
+      setMessage('يجب إدخال الكود والاسم ونوع الوقود وسعة صحيحة.');
+      return;
+    }
+    if (!Number.isFinite(maxOperatingLevel) || !Number.isFinite(minSafeLevel) || !Number.isFinite(deadStock) || minSafeLevel < 0 || deadStock < 0 || deadStock > minSafeLevel || minSafeLevel > maxOperatingLevel || maxOperatingLevel > capacity) {
+      setMessage('تحقق من المستويات: المخزون الميت ≤ الحد الأدنى ≤ أقصى مستوى تشغيل ≤ السعة.');
       return;
     }
 
     try {
-      const query = editing
-        ? supabase.from('tanks').update(payload).eq('id', editing.id)
-        : supabase.from('tanks').insert(payload);
-      const { error } = await query;
-      if (error) throw error;
+      const response = await fetch('/api/settings/tanks', {
+        method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editing ? { ...payload, id: editing.id } : payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذر حفظ الخزان.');
       setMessage(editing ? 'تم تحديث الخزان.' : 'تمت إضافة الخزان.');
       setForm(blankForm);
       setEditing(null);
+      setEditorOpen(false);
       await loadData();
     } catch (err: any) {
-      setMessage(err?.message || 'فشل حفظ الخزان.');
+      setMessage(err?.message || 'تعذر حفظ الخزان. تأكد من عدم تكرار الكود وصحة المستويات.');
     }
   }
 
   async function removeTank(tank: Tank) {
     if (!window.confirm(`هل تريد تعطيل الخزان ${tank.code}؟`)) return;
     setMessage('');
-    const { error } = await supabase
-      .from('tanks')
-      .update({ is_active: false, status: 'decommissioned' })
-      .eq('id', tank.id);
-    if (error) {
-      setMessage(error.message);
+    const response = await fetch('/api/settings/tanks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...tank, station_id: stationId, is_active: false, status: 'decommissioned' }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(result.error || 'تعذر تعطيل الخزان.');
       return;
     }
     setMessage('تم تعطيل الخزان.');
@@ -150,6 +172,7 @@ export default function TankSettings() {
       notes: tank.notes || '',
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditorOpen(true);
   }
 
   function resetForm() {
@@ -168,9 +191,10 @@ export default function TankSettings() {
         <Link className="ui-button secondary" href="/settings">
           العودة للإعدادات
         </Link>
+        <button type="button" className="ui-button" onClick={() => { resetForm(); setEditorOpen(true); }}>إضافة خزان</button>
       </div>
 
-      <form onSubmit={submit} className="ui-card form-card form-grid">
+      {editorOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={() => setEditorOpen(false)}><form onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} className="ui-card form-card form-grid modal-card">
         <h3 className="text-xl font-semibold">{editing ? 'تعديل الخزان' : 'إضافة خزان جديد'}</h3>
 
         <FormField label="الكود">
@@ -283,15 +307,13 @@ export default function TankSettings() {
             <button className="ui-button" type="submit">
               {editing ? 'حفظ التعديلات' : 'إضافة خزان'}
             </button>
-            {editing && (
-              <button type="button" className="ui-button secondary" onClick={resetForm}>
+            <button type="button" className="ui-button secondary" onClick={() => { resetForm(); setEditorOpen(false); }}>
                 إلغاء
-              </button>
-            )}
+            </button>
           </div>
           {message && <p className="text-sm text-[var(--text-muted)]">{message}</p>}
         </div>
-      </form>
+      </form></div>}
 
       <section className="ui-card mt-6">
         <div className="flex flex-col gap-4">

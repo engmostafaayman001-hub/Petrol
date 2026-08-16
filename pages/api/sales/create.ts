@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
+import { ensureOpenShiftSession } from '../../../src/lib/shiftSession';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -46,6 +47,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!createShiftError && createdShift?.id) shiftId = createdShift.id;
       }
     }
+
+    if (!payload?.station_id || !payload?.business_date) {
+      return res.status(400).json({ error: 'station_id and business_date are required.' });
+    }
+    shiftId = await ensureOpenShiftSession(supabase, payload.station_id, payload.business_date, shiftId);
 
     const normalizedPayload = {
       ...payload,
