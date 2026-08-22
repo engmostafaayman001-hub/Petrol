@@ -5,8 +5,8 @@ insert into public.stations (
 ) values (
   '11111111-1111-4111-8111-111111111111'::uuid,
   'PETROL-01',
-  'محطة PETROL الرئيسية',
-  'PETROL Fuel Station',
+  'محطة التعاون الرئيسية',
+  'Al Taawoun Fuel Station',
   'القاهرة',
   'EG',
   'Africa/Cairo',

@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
-import { ensureOpenShiftSession } from '../../../src/lib/shiftSession';
+import { ensureOpenShiftSession, OpenShiftRequiredError } from '../../../src/lib/shiftSession';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -19,39 +19,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!tankError && tank?.fuel_type_id) fuelTypeId = tank.fuel_type_id;
     }
 
-    let shiftId = payload?.shift_id;
-    if (!shiftId && payload?.station_id) {
-      const { data: shift, error: shiftError } = await supabase
-        .from('shifts')
-        .select('id')
-        .eq('station_id', payload.station_id)
-        .order('seq', { ascending: true })
-        .limit(1)
-        .single();
-      if (!shiftError && shift?.id) {
-        shiftId = shift.id;
-      } else {
-        const { data: createdShift, error: createShiftError } = await supabase
-          .from('shifts')
-          .insert({
-            station_id: payload.station_id,
-            code: 'SHIFT1',
-            name: 'Shift 1',
-            starts_at: '00:00:00',
-            ends_at: '23:59:59',
-            seq: 1,
-            is_active: true,
-          })
-          .select('id')
-          .single();
-        if (!createShiftError && createdShift?.id) shiftId = createdShift.id;
-      }
-    }
-
     if (!payload?.station_id || !payload?.business_date) {
       return res.status(400).json({ error: 'station_id and business_date are required.' });
     }
-    shiftId = await ensureOpenShiftSession(supabase, payload.station_id, payload.business_date, shiftId);
+    const shiftId = await ensureOpenShiftSession(supabase, payload.station_id, payload.business_date, payload?.shift_id);
 
     const normalizedPayload = {
       ...payload,
@@ -70,6 +41,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (error) return res.status(400).json({ error: error.message });
     return res.status(201).json({ sale: data?.[0] ?? null });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err instanceof OpenShiftRequiredError ? 409 : 500).json({ error: err.message });
   }
 }

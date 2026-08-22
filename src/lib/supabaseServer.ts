@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { NextApiRequest } from 'next';
 
 let svc: SupabaseClient | null = null;
 
@@ -42,6 +43,18 @@ export function getServiceSupabase(): SupabaseClient {
   });
 
   return svc;
+}
+
+export function getRequestSupabase(req: NextApiRequest): SupabaseClient | null {
+  const authorization = req.headers.authorization;
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!token || !url || !key) return null;
+  return createClient(url, key, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
 }
 
 export default getServiceSupabase;

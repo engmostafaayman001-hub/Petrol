@@ -18,7 +18,7 @@ export default function InstallAppPrompt() {
 
   if (installed || !prompt) return null;
   return <aside className="install-app-prompt" role="status">
-    <div><b>تثبيت تطبيق PETROL</b><small>وصول أسرع من شاشة جهازك</small></div>
+    <div><b>تثبيت تطبيق Al Taawoun</b><small>وصول أسرع من شاشة جهازك</small></div>
     <button type="button" onClick={async () => { await prompt.prompt(); const choice = await prompt.userChoice; if (choice.outcome === 'accepted') setPrompt(null); }}>تنزيل التطبيق</button>
   </aside>;
 }

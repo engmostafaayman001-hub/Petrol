@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/** Ensures every operational movement belongs to an open shift session. */
+export class OpenShiftRequiredError extends Error {
+  constructor() {
+    super('لا توجد جلسة مفتوحة لهذا التاريخ. افتح الوردية أولاً أو اختر تاريخ الوردية المفتوحة.');
+    this.name = 'OpenShiftRequiredError';
+  }
+}
+
+/** Ensures every operational movement belongs to an already-open shift. */
 export async function ensureOpenShiftSession(
   supabase: SupabaseClient,
   stationId: string,
@@ -9,15 +16,23 @@ export async function ensureOpenShiftSession(
 ): Promise<string> {
   let shiftId = requestedShiftId;
   if (!shiftId) {
-    const { data: shift, error } = await supabase.from('shifts').select('id')
-      .eq('station_id', stationId).eq('is_active', true).order('seq', { ascending: true }).limit(1).maybeSingle();
-    if (error || !shift?.id) throw new Error('No active shift exists for this station.');
-    shiftId = shift.id;
+    // Operational forms should always attach to the currently open shift.
+    // Picking the first configured shift here broke evening deliveries/sales
+    // by looking for a morning session that was already closed.
+    const { data: openSession, error } = await supabase.from('reconciliation_sessions').select('id, shift_id')
+      .eq('station_id', stationId).eq('business_date', businessDate).eq('status', 'open').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!openSession?.shift_id) throw new OpenShiftRequiredError();
+    shiftId = openSession.shift_id;
   }
-  const { error } = await supabase.rpc('fn_open_reconciliation', {
-    p_station_id: stationId, p_business_date: businessDate, p_shift_id: shiftId,
-  });
+  const { data: session, error } = await supabase.from('reconciliation_sessions')
+    .select('id')
+    .eq('station_id', stationId)
+    .eq('business_date', businessDate)
+    .eq('shift_id', shiftId)
+    .eq('status', 'open')
+    .maybeSingle();
   if (error) throw new Error(error.message);
-  // Assigned above either from the request or from the active-shift lookup.
+  if (!session?.id) throw new OpenShiftRequiredError();
   return shiftId!;
 }

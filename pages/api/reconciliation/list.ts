@@ -1,10 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
+import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const stationId = (req.query.stationId as string) || req.body.stationId;
     if (!stationId) return res.status(400).json({ error: 'stationId is required' });
+    try { await requireStationOperator(req, stationId); } catch (error: any) { return res.status(401).json({ error: error.message }); }
 
     const supabase = getServiceSupabase();
     const { data, error } = await supabase.from('v_reconciliation_sessions').select('*').eq('station_id', stationId).order('business_date', { ascending: false }).order('shift_seq', { ascending: false }).limit(100);

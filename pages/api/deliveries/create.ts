@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
-import { ensureOpenShiftSession } from '../../../src/lib/shiftSession';
+import { ensureOpenShiftSession, OpenShiftRequiredError } from '../../../src/lib/shiftSession';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -40,6 +40,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error('deliveries/create exception', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(err instanceof OpenShiftRequiredError ? 409 : 500).json({ error: err.message });
   }
 }

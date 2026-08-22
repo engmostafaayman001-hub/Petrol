@@ -20,6 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from('v_tank_status')
       .select('*')
       .eq('station_id', stationId)
+      .eq('is_active', true)
       .order('tank_code', { ascending: true });
 
     if (error) return res.status(500).json({ error: error.message });

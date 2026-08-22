@@ -12,23 +12,29 @@ export function useCurrentStationId(userId?: string | null) {
 
     let mounted = true;
 
-    supabase
-      .from('profiles')
-      .select('station_id')
-      .eq('id', userId)
-      .maybeSingle()
-      .then((result: { data: { station_id?: string } | null; error: { message?: string } | null }) => {
+    const loadStation = async (attempt = 0): Promise<void> => {
+      try {
+        const result = await supabase.from('profiles').select('station_id').eq('id', userId).maybeSingle() as { data: { station_id?: string } | null; error: { message?: string } | null };
         if (!mounted) return;
         const profile = result.data;
         if (result.error || !profile?.station_id) {
+          if (attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+            return loadStation(attempt + 1);
+          }
           setStationId(null);
           return;
         }
         setStationId(profile.station_id);
-      })
-      .catch(() => {
+      } catch {
+        if (mounted && attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+          return loadStation(attempt + 1);
+        }
         if (mounted) setStationId(null);
-      });
+      }
+    };
+    loadStation();
 
     return () => {
       mounted = false;

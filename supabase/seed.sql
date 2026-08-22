@@ -85,17 +85,17 @@ begin
   -- Station, people, shifts
   -- -------------------------------------------------------------------------
   insert into public.stations (id, code, name, legal_name, address, city, country_code, timezone, currency_code)
-  values (v_station, 'HR01', 'Harbour Road Service Station', 'Harbour Road Fuels Ltd',
+  values (v_station, 'HR01', 'التعاون', 'Al Taawoun',
           '14 Harbour Road, Dockside Industrial Park', 'Port Said', 'EG', 'Africa/Cairo', 'EGP');
 
   insert into public.profiles (id, station_id, full_name, email, phone, role, is_active) values
     (v_manager,    v_station, 'Yasmin Fahmy',  'manager@petrol.demo',    '+20 100 555 0142', 'manager',    true),
     (v_supervisor, v_station, 'Karim Nassar',  'supervisor@petrol.demo', '+20 100 555 0187', 'supervisor', true);
 
-  insert into public.shifts (station_id, code, name, starts_at, ends_at, seq) values
-    (v_station, 'A', 'Morning',  '06:00', '14:00', 1),
-    (v_station, 'B', 'Evening',  '14:00', '22:00', 2),
-    (v_station, 'C', 'Night',    '22:00', '06:00', 3);
+  insert into public.shifts (station_id, code, name, starts_at, ends_at, seq, shift_period) values
+    (v_station, 'A', 'Morning',  '06:00', '14:00', 1, 'morning'),
+    (v_station, 'B', 'Evening',  '14:00', '22:00', 2, 'evening'),
+    (v_station, 'C', 'Evening',  '22:00', '06:00', 3, 'evening');
 
   select id into v_shift_a from public.shifts where station_id = v_station and code = 'A';
   select id into v_shift_b from public.shifts where station_id = v_station and code = 'B';

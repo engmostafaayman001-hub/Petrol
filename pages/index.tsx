@@ -1,23 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import Header from '../src/components/Header';
+import PageLayout from '../src/components/PageLayout';
 import { useRequireAuth } from '../src/lib/auth';
+import { useRole } from '../src/lib/auth';
+import { can } from '../src/core/permissions';
 import supabase from '../src/lib/supabaseClient';
 import { ErrorState, LoadingState } from '../src/components/DataState';
 import { sumTankStock } from '../src/core/inventory/engine';
 
 type Snapshot = {
+  session?: { id: string; business_date?: string; status?: string; opened_at?: string; opened_by_name?: string; total_variance?: number } | null;
+  services?: Array<{ amount?: number }>;
+  by_fuel?: Array<{ fuel_name?: string; fuel_code?: string; sold_quantity?: number; delivered_quantity?: number; collected?: number; delivered_cost?: number; system_quantity?: number; capacity?: number }>;
   stock?: { total_system?: number; total_available?: number; total_capacity?: number };
   today?: {
     sold?: number;
     delivered?: number;
     delivery_count?: number;
     sale_count?: number;
+    service_count?: number;
+    total_services?: number;
     total_collected?: number;
     total_cost?: number;
     total_profit?: number;
+    total_expenses?: number;
   };
-  totals?: { total_collected?: number; total_cost?: number; total_profit?: number };
+  totals?: { total_collected?: number; total_cost?: number; total_profit?: number; total_services?: number; total_expenses?: number };
   reconciliation?: { total_variance?: number; open?: number };
   attention?: { critical_alerts?: number };
   trend?: Array<{ business_date?: string; closing_stock?: number; sold?: number; delivered?: number; variance?: number }>;
@@ -55,6 +63,7 @@ function Graph({ points }: { points: Array<{ label: string; value: number }> }) 
 
 export default function Dashboard() {
   const { user, isLoading } = useRequireAuth();
+  const { role } = useRole();
   const [stationId, setStationId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [tanks, setTanks] = useState<Tank[]>([]);
@@ -98,8 +107,10 @@ export default function Dashboard() {
 
     setState('loading');
     try {
+      const { data: authData } = await supabase.auth.getSession();
+      const headers: HeadersInit = authData.session?.access_token ? { Authorization: `Bearer ${authData.session.access_token}` } : {};
       const [overview, inventory] = await Promise.all([
-        fetch(`/api/station/snapshot?stationId=${encodeURIComponent(stationId)}`),
+        fetch(`/api/station/snapshot?stationId=${encodeURIComponent(stationId)}`, { headers }),
         fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`),
       ]);
 
@@ -143,16 +154,16 @@ export default function Dashboard() {
   }, [tanks, safeSnapshot.stock?.total_system]);
 
   const chartPoints = useMemo(() => {
-    const source = snapshot?.trend && snapshot.trend.length > 0 ? snapshot.trend : [];
+    const source = snapshot?.by_fuel && snapshot.by_fuel.length > 0 ? snapshot.by_fuel : [];
     if (!source.length) {
-      return [{ label: 'اليوم', value: totalSystemStock }];
+      return [];
     }
 
     return source.slice(-7).map((point) => ({
-      label: point.business_date ? new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'short' }).format(new Date(point.business_date)) : 'اليوم',
-      value: number(point.sold ?? 0),
+      label: point.fuel_name || point.fuel_code || 'وقود',
+      value: number(point.sold_quantity ?? 0),
     }));
-  }, [snapshot?.trend, totalSystemStock]);
+  }, [snapshot?.by_fuel]);
 
   const fuelCards = useMemo(() => {
     const map = new Map<string, { name: string; quantity: number; capacity: number; percent: number }>();
@@ -193,14 +204,19 @@ export default function Dashboard() {
   const totalCostFromDeliveries = number(safeSnapshot.totals?.total_cost ?? safeSnapshot.today?.total_cost ?? 0);
   const effectiveCollected = totalCollectedFromSales > 0 ? totalCollectedFromSales : 0;
   const effectiveCost = totalCostFromDeliveries > 0 ? totalCostFromDeliveries : 0;
-  const effectiveProfit = number(safeSnapshot.totals?.total_profit ?? (effectiveCollected - effectiveCost));
   const soldLiters = number(safeSnapshot.today?.sold ?? 0) || 0;
   const saleOperations = number(safeSnapshot.today?.sale_count ?? 0) || 0;
+  const serviceIncome = number(safeSnapshot.totals?.total_services ?? safeSnapshot.today?.total_services ?? 0);
+  const serviceOperations = number(safeSnapshot.today?.service_count ?? 0);
+  const expenseTotal = number(safeSnapshot.totals?.total_expenses ?? safeSnapshot.today?.total_expenses ?? 0);
+  const effectiveProfit = number(safeSnapshot.totals?.total_profit ?? (effectiveCollected - effectiveCost - expenseTotal));
 
   const cards: { title: string; value: unknown; unit: string; icon: IconName; hint: string }[] = [
     { title: 'المخزون الإجمالي', value: totalSystemStock, unit: 'لتر', icon: 'stock', hint: 'الرصد الحالي' },
     { title: 'إجمالي المقبوضات', value: effectiveCollected, unit: 'ج.م', icon: 'sales', hint: 'المبيعات المحصلة' },
-    { title: 'إجمالي الربح', value: effectiveProfit, unit: 'ج.م', icon: 'adjust', hint: 'إجمالي الربح' },
+    { title: 'إجمالي التوريدات', value: safeSnapshot.today?.delivered ?? 0, unit: 'لتر', icon: 'operations', hint: `${format(effectiveCost)} ج.م تكلفة التوريد` },
+    { title: 'دخل الخدمات', value: serviceIncome, unit: 'ج.م', icon: 'sales', hint: `${serviceOperations} خدمة في الجلسة` },
+    { title: 'إجمالي المصروفات', value: expenseTotal, unit: 'ج.م', icon: 'operations', hint: 'المصروفات المعتمدة في الجلسة' },
     { title: 'كمية الوقود المباعة', value: soldLiters, unit: 'لتر', icon: 'operations', hint: `${saleOperations} عملية بيع` },
   ];
 
@@ -212,13 +228,12 @@ export default function Dashboard() {
     { href: '/reports/daily', icon: 'report', label: 'عرض التقارير' },
   ];
 
-  if (isLoading || state === 'loading') return <div className="app-main"><Header /><main className="dashboard-page"><LoadingState /></main></div>;
+  if (isLoading || state === 'loading') return <PageLayout title="لوحة التحكم"><div className="dashboard-page"><LoadingState /></div></PageLayout>;
   if (!user) return null;
 
   return (
-    <div className="app-main">
-      <Header />
-      <main className="dashboard-page">
+    <PageLayout title="لوحة التحكم" description="نظرة سريعة على أداء المحطة والوردية الحالية">
+      <div className="dashboard-page">
         <section className="dash-title">
           <div>
             <h1>الرئيسية</h1>
@@ -227,10 +242,17 @@ export default function Dashboard() {
           <button onClick={load}>اليوم: {new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long' }).format(new Date())}</button>
         </section>
 
-        {state === 'error' && (
-          <div className="mb-4 rounded border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-[var(--text-muted)]">
-            تم تحميل البيانات الاحتياطية، يمكن إعادة المحاولة لاحقاً.
-          </div>
+        {safeSnapshot.session ? (
+          <section className="mb-5 rounded border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-right">
+            <strong>الجلسة الحالية مفتوحة</strong>
+            <span className="mr-3 text-sm text-[var(--text-muted)]">
+              {safeSnapshot.session.business_date || '—'} · {safeSnapshot.session.opened_by_name || 'المستخدم المسؤول'} · بدأت {safeSnapshot.session.opened_at ? new Date(safeSnapshot.session.opened_at).toLocaleString('ar-EG') : '—'}
+            </span>
+          </section>
+        ) : (
+          <section className="mb-5 rounded border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-right">
+            <strong>لا توجد جلسة مفتوحة حاليًا</strong>
+          </section>
         )}
 
         <section className="dash-kpis">
@@ -248,8 +270,8 @@ export default function Dashboard() {
         <section className="dash-analytics">
           <article className="dash-panel">
             <header>
-              <h2>المبيعات خلال آخر 7 أيام</h2>
-              <small>المخطط يعكس كل يوم على حدة من نفس البيانات</small>
+              <h2>مبيعات الجلسة الحالية حسب الوقود</h2>
+              <small>يعرض عمليات الجلسة المفتوحة فقط</small>
             </header>
             <Graph points={chartPoints} />
           </article>
@@ -285,7 +307,7 @@ export default function Dashboard() {
         <section className="dash-actions">
           <h2>إجراءات سريعة</h2>
           <div>
-            {actions.map((action) => (
+            {actions.filter((action) => (action.href !== '/reports/daily' || can(role, 'report:export')) && (action.href !== '/tanks' || can(role, 'tank:manage'))).map((action) => (
               <Link href={action.href} key={action.label}>
                 <span><Icon name={action.icon} /></span>
                 <b>{action.label}</b>
@@ -293,7 +315,7 @@ export default function Dashboard() {
             ))}
           </div>
         </section>
-      </main>
-    </div>
+      </div>
+    </PageLayout>
   );
 }

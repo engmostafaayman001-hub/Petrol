@@ -20,10 +20,12 @@ export const CAPABILITIES = [
   'reconciliation:open',
   'reconciliation:submit',
   'adjustment:request',
+  'expense:create',
 
   // Oversight
   'reconciliation:review',
   'adjustment:decide',
+  'expense:decide',
   'record:void',
 
   // Configuration
@@ -50,7 +52,7 @@ const SUPERVISOR_CAPABILITIES: readonly Capability[] = [
   'reconciliation:open',
   'reconciliation:submit',
   'adjustment:request',
-  'report:export',
+  'expense:create',
 ];
 
 const ROLE_CAPABILITIES: Record<UserRole, ReadonlySet<Capability>> = {

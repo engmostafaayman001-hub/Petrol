@@ -1,0 +1,10 @@
+{
+  "files.associations": {
+    "*.sql": "pgsql",
+    "supabase/**/*.sql": "pgsql"
+  },
+  "css.lint.unknownAtRules": "ignore",
+  "telemetry.editStats.details.enabled": true,
+  "telemetry.editStats.showStatusBar": true,
+  "telemetry.editStats.showDecorations": false
+}

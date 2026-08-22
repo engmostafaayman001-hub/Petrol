@@ -1,94 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import PageLayout from '../../src/components/PageLayout';
+import { Button, PageHeader, SectionCard } from '../../src/components/ui';
+import { useToast } from '../../src/components/ToastProvider';
 import { useRequireAuth } from '../../src/lib/auth';
-import FormField from '../../src/components/FormField';
-import { z } from 'zod';
 import { useCurrentStationId } from '../../src/lib/station';
 
+const cairoDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
 export default function NewSale() {
-  const { user } = useRequireAuth();
-  const router = useRouter();
-  const stationId = useCurrentStationId(user?.id ?? null);
-  const [tanks, setTanks] = useState<any[]>([]);
-  const [form, setForm] = useState<any>({ station_id: '', tank_id: '', business_date: '', shift_id: '', quantity: '' });
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!stationId) {
-      setTanks([]);
-      return;
-    }
-
-    setForm((current: any) => ({ ...current, station_id: stationId }));
-    fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`)
-      .then((r) => r.json())
-      .then((d) => setTanks(d.tanks || []))
-      .catch(() => setTanks([]));
-  }, [stationId]);
-
-  function update(k: string, v: any) {
-    setForm((s: any) => ({ ...s, [k]: v }));
-  }
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setMessage(null);
-    const schema = z.object({ station_id: z.string().uuid(), tank_id: z.string().uuid(), fuel_type_id: z.string().uuid().optional(), business_date: z.string().min(1), shift_id: z.string().uuid().optional(), quantity: z.number().positive() });
-    const parsed = schema.safeParse({ station_id: form.station_id, tank_id: form.tank_id, fuel_type_id: form.fuel_type_id || undefined, business_date: form.business_date, shift_id: form.shift_id || undefined, quantity: Number(form.quantity) });
-    if (!parsed.success) {
-      setMessage('تحقق من الحقول');
-      return;
-    }
-
-    const payload: any = {
-      station_id: form.station_id,
-      tank_id: form.tank_id,
-      business_date: form.business_date,
-      quantity: Number(form.quantity),
-    };
-    if (form.fuel_type_id) payload.fuel_type_id = form.fuel_type_id;
-    if (form.shift_id) payload.shift_id = form.shift_id;
-
-    const res = await fetch('/api/sales/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      setMessage(body.error || 'فشل التسجيل');
-      return;
-    }
-
-    router.push('/sales');
-  }
-
-  return (
-    <PageLayout title="تسجيل بيع">
-      <h2 className="text-xl font-semibold mb-4 text-right">تسجيل بيع</h2>
-      <form onSubmit={submit} className="max-w-md space-y-4">
-        <FormField label="الخزان">
-          <select required value={form.tank_id} onChange={(e) => { update('tank_id', e.target.value); const opt = e.target.selectedOptions[0]; update('fuel_type_id', opt?.dataset?.fuel); }} className="w-full border rounded px-3 py-2">
-            <option value="">اختر خزان</option>
-            {tanks.map((t) => (
-              <option key={t.tank_id} value={t.tank_id} data-fuel={t.fuel_type_id}>{t.tank_code} — {t.fuel_name}</option>
-            ))}
-          </select>
-        </FormField>
-        <FormField label="تاريخ العملية">
-          <input required type="date" value={form.business_date} onChange={(e) => update('business_date', e.target.value)} className="w-full border rounded px-3 py-2" />
-        </FormField>
-
-        <FormField label="الكمية (لتر)">
-          <input required type="number" step="0.1" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} className="w-full border rounded px-3 py-2" />
-        </FormField>
-
-        <div className="text-right">
-          <button className="bg-primary text-white px-4 py-2 rounded">تسجيل البيع</button>
-        </div>
-        {message && <div className="text-sm text-muted">{message}</div>}
-      </form>
-    </PageLayout>
-  );
+  const { user } = useRequireAuth(); const router = useRouter(); const stationId = useCurrentStationId(user?.id ?? null); const { notify } = useToast();
+  const [tanks, setTanks] = useState<any[]>([]); const [form, setForm] = useState({ tank_id: '', business_date: cairoDate(), quantity: '' }); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
+  useEffect(() => { if (!stationId) return setTanks([]); fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`).then((r) => r.json()).then((d) => setTanks(d.tanks || [])).catch(() => setTanks([])); }, [stationId]);
+  const selectedTank = tanks.find((tank) => tank.tank_id === form.tank_id);
+  async function submit(event: React.FormEvent) { event.preventDefault(); setError(''); const quantity = Number(form.quantity); if (!stationId || !form.tank_id || !form.business_date || !Number.isFinite(quantity) || quantity <= 0) return setError('أكمل الخزان والتاريخ والكمية الصحيحة قبل الحفظ.'); setSaving(true); try { const response = await fetch('/api/sales/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ station_id: stationId, tank_id: form.tank_id, fuel_type_id: selectedTank?.fuel_type_id, business_date: form.business_date, quantity }) }); const body = await response.json(); if (!response.ok) throw new Error(body.error || 'تعذر تسجيل عملية البيع.'); notify('تم تسجيل عملية البيع بنجاح.'); await router.push('/sales'); } catch (reason: any) { setError(reason.message || 'حدث خطأ أثناء حفظ العملية. حاول مرة أخرى.'); } finally { setSaving(false); } }
+  return <PageLayout title="تسجيل بيع"><PageHeader eyebrow="المبيعات" title="تسجيل عملية بيع" description="سجّل الكمية بسرعة داخل الوردية المفتوحة الحالية." actions={<Button variant="secondary" type="button" onClick={() => router.push('/sales')}>العودة للسجل</Button>}/><SectionCard title="بيانات العملية" description="ترتبط العملية تلقائيًا بالوردية المفتوحة للتاريخ المحدد." className="max-w-2xl"><form onSubmit={submit} noValidate><div className="form-grid"><div className="form-field"><label htmlFor="sale-tank">الخزان <span aria-hidden="true">*</span></label><select id="sale-tank" required value={form.tank_id} onChange={(event) => setForm({ ...form, tank_id: event.target.value })}><option value="">اختر الخزان والوقود</option>{tanks.map((tank) => <option key={tank.tank_id} value={tank.tank_id}>{tank.tank_code} — {tank.fuel_name}</option>)}</select>{selectedTank && <small>الرصيد المتاح: {Number(selectedTank.available_quantity ?? selectedTank.system_quantity ?? 0).toLocaleString('ar-EG')} لتر</small>}</div><div className="form-field"><label htmlFor="sale-date">تاريخ العملية <span aria-hidden="true">*</span></label><input id="sale-date" required type="date" value={form.business_date} onChange={(event) => setForm({ ...form, business_date: event.target.value })}/><small>يجب أن يطابق تاريخ الوردية المفتوحة.</small></div><div className="form-field form-field-full"><label htmlFor="sale-quantity">الكمية باللتر <span aria-hidden="true">*</span></label><input id="sale-quantity" required min="0.001" step="0.001" inputMode="decimal" type="number" autoFocus value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} placeholder="مثال: 50"/></div></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="form-actions"><Button type="submit" loading={saving}>حفظ عملية البيع</Button><Button type="button" variant="secondary" disabled={saving} onClick={() => router.push('/sales')}>إلغاء</Button></div></form></SectionCard></PageLayout>;
 }
