@@ -40,6 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (target.email.toLowerCase() === 'markode@gmail.com' && (input.role === 'supervisor' || input.is_active === false)) return res.status(400).json({ error: 'لا يمكن تخفيض صلاحية أو إيقاف مدير النظام.' });
       const updates: Record<string, unknown> = {}; if (input.full_name) updates.full_name = input.full_name.trim(); if (input.role) updates.role = input.role; if (typeof input.is_active === 'boolean') updates.is_active = input.is_active;
       if (input.password) { const { error } = await supabase.auth.admin.updateUserById(input.id, { password: input.password }); if (error) throw error; }
+      if (typeof input.is_active === 'boolean') { const { error } = await supabase.auth.admin.updateUserById(input.id, { ban_duration: input.is_active ? 'none' : '876000h' }); if (error) throw error; }
       const { error } = await supabase.from('profiles').update(updates).eq('id', input.id).eq('station_id', manager.station_id); if (error) throw error;
       return res.status(200).json({ ok: true });
     }
@@ -49,8 +50,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data: target } = await supabase.from('profiles').select('email,role').eq('id', input.id).eq('station_id', manager.station_id).single();
       if (!target) return res.status(404).json({ error: 'المستخدم غير موجود.' });
       if (target.email.toLowerCase() === 'markode@gmail.com') return res.status(400).json({ error: 'لا يمكن حذف مدير النظام.' });
-      const { error } = await supabase.auth.admin.deleteUser(input.id); if (error) throw error;
-      return res.status(200).json({ ok: true });
+      const { error: profileUpdateError } = await supabase.from('profiles').update({ is_active: false }).eq('id', input.id).eq('station_id', manager.station_id);
+      if (profileUpdateError) throw profileUpdateError;
+      const { error: banError } = await supabase.auth.admin.updateUserById(input.id, { ban_duration: '876000h' });
+      if (banError) throw banError;
+      return res.status(200).json({ ok: true, deleted: false, deactivated: true });
     }
     res.setHeader('Allow', 'GET, POST, PATCH, DELETE'); return res.status(405).end();
   } catch (error: any) { return res.status(500).json({ error: error?.message || 'تعذر تنفيذ العملية.' }); }
