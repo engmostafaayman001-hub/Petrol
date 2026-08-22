@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const supabase = getServiceSupabase();
   try {
     if (req.method === 'GET') {
-      const { data, error } = await supabase.from('profiles').select('id,full_name,email,role,is_active,last_seen_at,created_at').eq('station_id', manager.station_id).order('full_name');
+      const { data, error } = await supabase.from('profiles').select('id,full_name,email,role,is_active,last_seen_at,created_at').eq('station_id', manager.station_id).eq('is_active', true).order('full_name');
       if (error) throw error;
       return res.status(200).json({ users: data || [] });
     }
