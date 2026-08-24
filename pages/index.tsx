@@ -21,16 +21,18 @@ type Snapshot = {
     service_count?: number;
     total_services?: number;
     total_collected?: number;
+    total_revenue?: number;
+    total_remaining?: number;
     total_cost?: number;
     total_profit?: number;
     total_expenses?: number;
   };
-  totals?: { total_collected?: number; total_cost?: number; total_profit?: number; total_services?: number; total_expenses?: number };
+  totals?: { total_collected?: number; total_revenue?: number; total_remaining?: number; total_cost?: number; total_profit?: number; total_services?: number; total_expenses?: number };
   reconciliation?: { total_variance?: number; open?: number };
   attention?: { critical_alerts?: number };
   trend?: Array<{ business_date?: string; closing_stock?: number; sold?: number; delivered?: number; variance?: number }>;
 };
-type Tank = { tank_id: string; tank_code?: string; fuel_name?: string; fuel_type?: string; system_quantity?: number; current_qty?: number; current_stock?: number; capacity?: number; capacity_liters?: number; fill_pct?: number; percentage?: number };
+type Tank = { tank_id: string; fuel_type_id?: string; tank_code?: string; fuel_name?: string; fuel_type?: string; system_quantity?: number; current_qty?: number; current_stock?: number; capacity?: number; capacity_liters?: number; fill_pct?: number; percentage?: number };
 type IconName = 'stock' | 'sales' | 'operations' | 'report' | 'plus' | 'adjust' | 'transfer';
 const number = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const format = (value: unknown) => new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 0 }).format(number(value));
@@ -111,7 +113,7 @@ export default function Dashboard() {
       const headers: HeadersInit = authData.session?.access_token ? { Authorization: `Bearer ${authData.session.access_token}` } : {};
       const [overview, inventory] = await Promise.all([
         fetch(`/api/station/snapshot?stationId=${encodeURIComponent(stationId)}`, { headers }),
-        fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`),
+        fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`, { headers }),
       ]);
 
       const [a, b] = await Promise.all([overview.json().catch(() => ({})), inventory.json().catch(() => ({}))]);
@@ -168,24 +170,15 @@ export default function Dashboard() {
   const fuelCards = useMemo(() => {
     const map = new Map<string, { name: string; quantity: number; capacity: number; percent: number }>();
 
-    const configuredFuels = Array.isArray((safeSnapshot as any).by_fuel) ? (safeSnapshot as any).by_fuel : [];
-    for (const fuel of configuredFuels) {
-      const name = fuel.fuel_name || fuel.fuel_code || 'وقود';
-      map.set(name, { name, quantity: number(fuel.system_quantity), capacity: number(fuel.capacity), percent: 0 });
-    }
-
     for (const tank of tanks) {
       const name = tank.fuel_name || tank.fuel_type || tank.tank_code || 'وقود';
+      const key = tank.fuel_type_id || name;
       const quantity = number((tank as any).system_quantity ?? (tank as any).current_qty ?? (tank as any).current_stock ?? (tank as any).available_quantity ?? 0);
       const capacity = number(tank.capacity ?? tank.capacity_liters ?? 0);
-      const current = map.get(name) ?? { name, quantity: 0, capacity: 0, percent: 0 };
-      // The snapshot is already grouped by fuel. Use tank rows only when this
-      // grade was not returned by it, avoiding duplicate totals.
-      if (!configuredFuels.some((fuel: any) => (fuel.fuel_name || fuel.fuel_code || 'وقود') === name)) {
-        current.quantity += quantity;
-        current.capacity += capacity;
-      }
-      map.set(name, current);
+      const current = map.get(key) ?? { name, quantity: 0, capacity: 0, percent: 0 };
+      current.quantity += quantity;
+      current.capacity += capacity;
+      map.set(key, current);
     }
 
     const grouped = Array.from(map.values()).map((item) => ({
@@ -200,7 +193,22 @@ export default function Dashboard() {
     return grouped.sort((a, b) => b.quantity - a.quantity);
   }, [tanks, safeSnapshot]);
 
+  const stockRingGradient = useMemo(() => {
+    const total = fuelCards.reduce((sum, fuel) => sum + fuel.quantity, 0);
+    if (total <= 0) return '#dbe5f2';
+    const colors = ['#1769f5', '#00a9d8', '#315b9a', '#16a34a', '#f59e0b'];
+    let cursor = 0;
+    const segments = fuelCards.map((fuel, index) => {
+      const next = cursor + (fuel.quantity / total) * 100;
+      const segment = `${colors[index % colors.length]} ${cursor.toFixed(2)}% ${next.toFixed(2)}%`;
+      cursor = next;
+      return segment;
+    });
+    return `conic-gradient(${segments.join(', ')})`;
+  }, [fuelCards]);
+
   const totalCollectedFromSales = number(safeSnapshot.totals?.total_collected ?? safeSnapshot.today?.total_collected ?? 0);
+  const totalRemaining = number(safeSnapshot.totals?.total_remaining ?? safeSnapshot.today?.total_remaining ?? 0);
   const totalCostFromDeliveries = number(safeSnapshot.totals?.total_cost ?? safeSnapshot.today?.total_cost ?? 0);
   const effectiveCollected = totalCollectedFromSales > 0 ? totalCollectedFromSales : 0;
   const effectiveCost = totalCostFromDeliveries > 0 ? totalCostFromDeliveries : 0;
@@ -213,7 +221,8 @@ export default function Dashboard() {
 
   const cards: { title: string; value: unknown; unit: string; icon: IconName; hint: string }[] = [
     { title: 'المخزون الإجمالي', value: totalSystemStock, unit: 'لتر', icon: 'stock', hint: 'الرصد الحالي' },
-    { title: 'إجمالي المقبوضات', value: effectiveCollected, unit: 'ج.م', icon: 'sales', hint: 'المبيعات المحصلة' },
+    { title: 'إجمالي المحصل', value: effectiveCollected, unit: 'ج.م', icon: 'sales', hint: 'المبيعات المحصلة' },
+    { title: 'المبيعات الآجلة', value: totalRemaining, unit: 'ج.م', icon: 'sales', hint: 'المتبقي من مبيعات الجلسة' },
     { title: 'إجمالي التوريدات', value: safeSnapshot.today?.delivered ?? 0, unit: 'لتر', icon: 'operations', hint: `${format(effectiveCost)} ج.م تكلفة التوريد` },
     { title: 'دخل الخدمات', value: serviceIncome, unit: 'ج.م', icon: 'sales', hint: `${serviceOperations} خدمة في الجلسة` },
     { title: 'إجمالي المصروفات', value: expenseTotal, unit: 'ج.م', icon: 'operations', hint: 'المصروفات المعتمدة في الجلسة' },
@@ -281,7 +290,7 @@ export default function Dashboard() {
               <h2>المخزون الحالي في الخزانات</h2>
             </header>
             <div className="stock-summary">
-              <div className="stock-ring">
+              <div className="stock-ring" style={{ background: stockRingGradient }}>
                 <div>
                   <small>إجمالي</small>
                   <b>{format(totalSystemStock)}</b>

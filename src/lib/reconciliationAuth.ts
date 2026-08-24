@@ -26,3 +26,12 @@ export async function requireStationOperator(req: NextApiRequest, stationId: str
   }
   return auth.user;
 }
+
+export async function requireStationManager(req: NextApiRequest, stationId: string) {
+  const user = await requireStationOperator(req, stationId);
+  const supabase = getServiceSupabase();
+  const { data: profile, error } = await supabase.from('profiles').select('role').eq('id', user.id).eq('station_id', stationId).eq('is_active', true).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (profile?.role !== 'manager') throw new Error('هذا الإجراء متاح للمدير فقط.');
+  return user;
+}

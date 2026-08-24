@@ -6,7 +6,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'POST') return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
 
   try {
-    const { station_id, station_code, password } = req.body || {};
+    const { station_id, station_code, password, scope = 'operational' } = req.body || {};
     if (!station_id || !station_code || typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ error: 'أدخل كلمة المرور وكود المحطة للتأكيد.' });
     }
@@ -32,7 +32,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { error: passwordError } = await verifier.auth.signInWithPassword({ email: authData.user.email, password });
     if (passwordError) return res.status(403).json({ error: 'كلمة المرور غير صحيحة.' });
 
-    const { error } = await getServiceSupabase().rpc('fn_reset_operational_data', {
+    if (!['operational', 'sessions'].includes(scope)) return res.status(400).json({ error: 'نوع المسح غير صالح.' });
+    const functionName = scope === 'sessions' ? 'fn_reset_session_data' : 'fn_reset_all_application_data';
+    const { error } = await getServiceSupabase().rpc(functionName, {
       p_station_id: station_id,
       p_actor_id: authData.user.id,
       p_confirmation: station_code,

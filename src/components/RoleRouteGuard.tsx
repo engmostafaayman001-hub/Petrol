@@ -3,15 +3,19 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../lib/auth';
 import { can } from '../core/permissions';
 
-const supervisorRoutes = new Set(['/', '/sales', '/sales/new', '/deliveries', '/deliveries/new', '/services', '/services/new', '/reconciliation', '/reconciliation/session', '/expenses']);
+const supervisorRoutes = new Set(['/', '/sales', '/sales/new', '/deliveries', '/deliveries/new', '/services', '/services/new', '/reconciliation', '/reconciliation/session', '/expenses', '/customers', '/suppliers', '/reports/daily', '/ledger']);
 const supervisorRouteCapabilities: Array<{ prefix: string; capability: Parameters<typeof can>[1] }> = [
   { prefix: '/services', capability: 'sale:create' },
   { prefix: '/reports/daily', capability: 'report:export' },
+  { prefix: '/fuel', capability: 'fuel_type:manage' },
   { prefix: '/tanks', capability: 'tank:manage' },
+  { prefix: '/tanks', capability: 'delivery:create' },
   { prefix: '/settings', capability: 'settings:manage' },
   { prefix: '/users', capability: 'user:manage' },
   { prefix: '/ledger', capability: 'audit:read' },
   { prefix: '/adjustments', capability: 'adjustment:request' },
+  { prefix: '/customers', capability: 'customer:manage' },
+  { prefix: '/suppliers', capability: 'supplier:payment' },
 ];
 
 export default function RoleRouteGuard({ children }: { children: React.ReactNode }) {

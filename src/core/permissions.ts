@@ -21,6 +21,12 @@ export const CAPABILITIES = [
   'reconciliation:submit',
   'adjustment:request',
   'expense:create',
+  'customer:manage',
+  'customer:payment',
+  'supplier:manage',
+  'supplier:payment',
+  'audit:read',
+  'report:export',
 
   // Oversight
   'reconciliation:review',
@@ -39,8 +45,6 @@ export const CAPABILITIES = [
 
   // Administration
   'user:manage',
-  'audit:read',
-  'report:export',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -53,6 +57,11 @@ const SUPERVISOR_CAPABILITIES: readonly Capability[] = [
   'reconciliation:submit',
   'adjustment:request',
   'expense:create',
+  'customer:manage',
+  'customer:payment',
+  'supplier:manage',
+  'supplier:payment',
+  'audit:read',
 ];
 
 const ROLE_CAPABILITIES: Record<UserRole, ReadonlySet<Capability>> = {

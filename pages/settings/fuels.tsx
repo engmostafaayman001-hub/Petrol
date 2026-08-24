@@ -17,6 +17,7 @@ type FuelType = {
   sort_order: number;
   is_active: boolean;
   notes?: string | null;
+  supplier_id?: string | null;
 };
 
 const blankForm = {
@@ -28,12 +29,14 @@ const blankForm = {
   sort_order: '100',
   is_active: true,
   notes: '',
+  supplier_id: '',
 };
 
 export default function FuelSettings() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
   const [form, setForm] = useState<typeof blankForm>(blankForm);
   const [editing, setEditing] = useState<FuelType | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -51,7 +54,7 @@ export default function FuelSettings() {
     try {
       const { data, error } = await supabase
         .from('fuel_types')
-        .select('id,code,name,selling_price,purchase_price,color_hex,sort_order,is_active,notes')
+        .select('id,code,name,selling_price,purchase_price,color_hex,sort_order,is_active,notes,supplier_id')
         .eq('station_id', stationId)
         .order('sort_order', { ascending: true });
       if (error) throw error;
@@ -65,6 +68,11 @@ export default function FuelSettings() {
   useEffect(() => {
     loadFuelTypes();
   }, [loadFuelTypes]);
+
+  useEffect(() => {
+    if (!stationId) return;
+    supabase.from('suppliers').select('id,name').eq('station_id', stationId).eq('is_active', true).order('name').then(({ data }: { data: Array<{ id: string; name: string }> | null }) => setSuppliers(data || []));
+  }, [stationId]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -85,6 +93,7 @@ export default function FuelSettings() {
       sort_order: Number(form.sort_order) || 100,
       is_active: form.is_active,
       notes: form.notes.trim() || null,
+      supplier_id: form.supplier_id || null,
     };
 
     if (!payload.code || !payload.name) {
@@ -113,19 +122,14 @@ export default function FuelSettings() {
   }
 
   async function removeFuelType(fuel: FuelType) {
-    if (!window.confirm(`هل تريد حذف نوع الوقود ${fuel.name} نهائياً؟`)) return;
+    if (!window.confirm(`هل تريد حذف نوع الوقود ${fuel.name}؟ سيظل محفوظًا في السجلات السابقة.`)) return;
     setMessage('');
-    const { count } = await supabase.from('tanks').select('id', { count: 'exact', head: true }).eq('fuel_type_id', fuel.id);
-    if (count && count > 0) {
-      setMessage('لا يمكن حذف هذا النوع لأنه مرتبط بخزان. عطّل الخزانات أو غيّر نوع وقودها أولاً.');
-      return;
-    }
-    const { error } = await supabase.from('fuel_types').delete().eq('id', fuel.id);
+    const { error } = await supabase.from('fuel_types').update({ is_active: false }).eq('id', fuel.id).eq('station_id', stationId);
     if (error) {
       setMessage(error.message);
       return;
     }
-    setMessage('تم حذف نوع الوقود.');
+    setMessage('تم تعطيل نوع الوقود مع الحفاظ على السجلات السابقة.');
     await loadFuelTypes();
   }
 
@@ -140,6 +144,7 @@ export default function FuelSettings() {
       sort_order: String(fuel.sort_order ?? 100),
       is_active: fuel.is_active,
       notes: fuel.notes || '',
+      supplier_id: fuel.supplier_id || '',
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setEditorOpen(true);
@@ -203,6 +208,17 @@ export default function FuelSettings() {
             onChange={(e) => setForm((current) => ({ ...current, purchase_price: e.target.value }))}
             className="w-full border rounded px-3 py-2"
           />
+        </FormField>
+
+        <FormField label="المورد">
+          <select
+            value={form.supplier_id}
+            onChange={(e) => setForm((current) => ({ ...current, supplier_id: e.target.value }))}
+            className="w-full border rounded px-3 py-2"
+          >
+            <option value="">بدون مورد محدد</option>
+            {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+          </select>
         </FormField>
 
         <FormField label="لون العرض">
@@ -281,6 +297,7 @@ export default function FuelSettings() {
                     <th className="px-4 py-3">الاسم</th>
                     <th className="px-4 py-3">سعر البيع</th>
                     <th className="px-4 py-3">سعر الشراء</th>
+                    <th className="px-4 py-3">المورد</th>
                     <th className="px-4 py-3">نشط</th>
                     <th className="px-4 py-3">إجراءات</th>
                   </tr>
@@ -292,6 +309,7 @@ export default function FuelSettings() {
                       <td className="px-4 py-3">{fuel.name}</td>
                       <td className="px-4 py-3">{fuel.selling_price?.toLocaleString('ar-EG')}</td>
                       <td className="px-4 py-3">{fuel.purchase_price?.toLocaleString('ar-EG')}</td>
+                      <td className="px-4 py-3">{suppliers.find((supplier) => supplier.id === fuel.supplier_id)?.name || 'بدون مورد'}</td>
                       <td className="px-4 py-3">{fuel.is_active ? 'نعم' : 'لا'}</td>
                       <td className="px-4 py-3 space-x-2 whitespace-nowrap">
                         <button className="ui-button secondary" type="button" onClick={() => editFuelType(fuel)}>

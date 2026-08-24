@@ -1,8 +1,183 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import PageLayout from '../../src/components/PageLayout';
-import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
-import { useRequireAuth } from '../../src/lib/auth';
-import { useCurrentStationId } from '../../src/lib/station';
-type Entry = { id:number; business_date?:string; txn_type?:string; fuel_name?:string; tank_code?:string; quantity_delta?:number; running_balance?:number; note?:string; shift_name?:string }; type Expense = { id:string; business_date?:string; category?:string; description?:string; amount?:number; status?:string };
-const labels:Record<string,string>={delivery:'توريد',sale:'بيع',adjustment:'تسوية',variance_writeoff:'فرق جرد',reversal:'عكس حركة'}; const n=(v:any)=>Number.isFinite(Number(v))?Number(v):0;
-export default function LedgerPage(){const {user}=useRequireAuth();const stationId=useCurrentStationId(user?.id??null);const[rows,setRows]=useState<Entry[]>([]);const[state,setState]=useState<'loading'|'ready'|'error'>('loading');const[filter,setFilter]=useState('all');const load=useCallback(async()=>{if(!stationId)return;setState('loading');try{const r=await fetch(`/api/ledger?stationId=${encodeURIComponent(stationId)}`);const d=await r.json();if(!r.ok)throw Error();setRows(d.rows||[]);setState('ready')}catch{setState('error')}},[stationId]);useEffect(()=>{if(stationId)load()},[stationId,load]);const visible=useMemo(()=>filter==='all'?rows:rows.filter(x=>x.txn_type===filter),[rows,filter]);const totals=useMemo(()=>rows.reduce((a,x)=>({input:a.input+Math.max(n(x.quantity_delta),0),output:a.output+Math.abs(Math.min(n(x.quantity_delta),0))}),{input:0,output:0}),[rows]);const filters:[string,string][]=[['all','الكل'],['delivery','توريد'],['sale','بيع'],['adjustment','تسوية'],['variance_writeoff','فروقات']];return <PageLayout title="دفتر العمليات"><main className="ledger-page"><div className="page-heading"><div><h2>دفتر العمليات</h2><p>سجل زمني دقيق لكل حركة أثرت في المخزون.</p></div><button className="ui-button secondary" onClick={load}>تحديث</button></div><section className="ledger-summary"><article><small>حركات داخلة</small><b>+{totals.input.toLocaleString('ar-EG')} <em>لتر</em></b></article><article><small>حركات خارجة</small><b>−{totals.output.toLocaleString('ar-EG')} <em>لتر</em></b></article><article><small>إجمالي الحركات</small><b>{rows.length.toLocaleString('ar-EG')}</b></article></section><section className="ui-card ledger-card"><div className="ledger-toolbar"><div><b>آخر الحركات</b><small>يُحدَّث السجل تلقائياً مع البيع والتوريد والتسويات.</small></div><div className="ledger-filters">{filters.map(([v,l])=><button key={v} className={filter===v?'active':''} onClick={()=>setFilter(v)}>{l}</button>)}</div></div>{state==='loading'?<LoadingState/>:state==='error'?<ErrorState onRetry={load}/>:visible.length===0?<EmptyState title="لا توجد حركات مطابقة" description="ستظهر هنا الحركات المؤثرة في المخزون."/>:<div className="ledger-list">{visible.map(r=>{const incoming=n(r.quantity_delta)>=0;return <article key={r.id} className="ledger-entry"><i className={incoming?'in':'out'}>{incoming?'+':'−'}</i><div className="ledger-entry-main"><div><b>{labels[r.txn_type||'']||r.txn_type}</b><span>{r.fuel_name||'وقود'} · خزان {r.tank_code||'—'}</span></div><small>{r.business_date} · {r.shift_name||'وردية'}</small>{r.note&&<p>{r.note}</p>}</div><div className="ledger-entry-value"><strong className={incoming?'positive':'negative'}>{incoming?'+':''}{n(r.quantity_delta).toLocaleString('ar-EG')} لتر</strong><small>الرصيد بعد الحركة: {n(r.running_balance).toLocaleString('ar-EG')} لتر</small></div></article>})}</div>}</section></main></PageLayout>}
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import PageLayout from "../../src/components/PageLayout";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../../src/components/DataState";
+import { useRequireAuth } from "../../src/lib/auth";
+import { useCurrentStationId } from "../../src/lib/station";
+import supabase from "../../src/lib/supabaseClient";
+type Entry = {
+  id: number;
+  business_date?: string;
+  txn_type?: string;
+  fuel_name?: string;
+  tank_code?: string;
+  quantity_delta?: number;
+  running_balance?: number;
+  note?: string;
+  shift_name?: string;
+};
+type Expense = {
+  id: string;
+  business_date?: string;
+  category?: string;
+  description?: string;
+  amount?: number;
+  status?: string;
+};
+const labels: Record<string, string> = {
+  delivery: "توريد",
+  sale: "بيع",
+  adjustment: "تسوية",
+  variance_writeoff: "فرق جرد",
+  reversal: "عكس حركة",
+};
+const n = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+export default function LedgerPage() {
+  const { user } = useRequireAuth();
+  const stationId = useCurrentStationId(user?.id ?? null);
+  const [rows, setRows] = useState<Entry[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [filter, setFilter] = useState("all");
+  const load = useCallback(async () => {
+    if (!stationId) return;
+    setState("loading");
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const r = await fetch(
+        `/api/ledger?stationId=${encodeURIComponent(stationId)}`,
+        { headers: auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {} },
+      );
+      const d = await r.json();
+      if (!r.ok) throw Error();
+      setRows(d.rows || []);
+      setState("ready");
+    } catch {
+      setState("error");
+    }
+  }, [stationId]);
+  useEffect(() => {
+    if (stationId) load();
+  }, [stationId, load]);
+  const visible = useMemo(
+    () => (filter === "all" ? rows : rows.filter((x) => x.txn_type === filter)),
+    [rows, filter],
+  );
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (a, x) => ({
+          input: a.input + Math.max(n(x.quantity_delta), 0),
+          output: a.output + Math.abs(Math.min(n(x.quantity_delta), 0)),
+        }),
+        { input: 0, output: 0 },
+      ),
+    [rows],
+  );
+  const filters: [string, string][] = [
+    ["all", "الكل"],
+    ["delivery", "توريد"],
+    ["sale", "بيع"],
+    ["adjustment", "تسوية"],
+    ["variance_writeoff", "فروقات"],
+  ];
+  return (
+    <PageLayout title="دفتر العمليات">
+      <main className="ledger-page">
+        <div className="page-heading">
+          <div>
+            <h2>دفتر العمليات</h2>
+            <p>سجل زمني دقيق لكل حركة أثرت في المخزون.</p>
+          </div>
+          <button className="ui-button secondary" onClick={load}>
+            تحديث
+          </button>
+        </div>
+        <section className="ledger-summary">
+          <article>
+            <small>حركات داخلة</small>
+            <b>
+              +{totals.input.toLocaleString("ar-EG")} <em>لتر</em>
+            </b>
+          </article>
+          <article>
+            <small>حركات خارجة</small>
+            <b>
+              −{totals.output.toLocaleString("ar-EG")} <em>لتر</em>
+            </b>
+          </article>
+          <article>
+            <small>إجمالي الحركات</small>
+            <b>{rows.length.toLocaleString("ar-EG")}</b>
+          </article>
+        </section>
+        <section className="ui-card ledger-card">
+          <div className="ledger-toolbar">
+            <div>
+              <b>آخر الحركات</b>
+              <small>يُحدَّث السجل تلقائياً مع البيع والتوريد والتسويات.</small>
+            </div>
+            <div className="ledger-filters">
+              {filters.map(([v, l]) => (
+                <button
+                  key={v}
+                  className={filter === v ? "active" : ""}
+                  onClick={() => setFilter(v)}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          {state === "loading" ? (
+            <LoadingState />
+          ) : state === "error" ? (
+            <ErrorState onRetry={load} />
+          ) : visible.length === 0 ? (
+            <EmptyState
+              title="لا توجد حركات مطابقة"
+              description="ستظهر هنا الحركات المؤثرة في المخزون."
+            />
+          ) : (
+            <div className="ledger-list">
+              {visible.map((r) => {
+                const incoming = n(r.quantity_delta) >= 0;
+                return (
+                  <article key={r.id} className="ledger-entry">
+                    <i className={incoming ? "in" : "out"}>
+                      {incoming ? "+" : "−"}
+                    </i>
+                    <div className="ledger-entry-main">
+                      <div>
+                        <b>{labels[r.txn_type || ""] || r.txn_type}</b>
+                        <span>
+                          {r.fuel_name || "وقود"} · خزان {r.tank_code || "—"}
+                        </span>
+                      </div>
+                      <small>
+                        {r.business_date} · {r.shift_name || "وردية"}
+                      </small>
+                      {r.note && <p>{r.note}</p>}
+                    </div>
+                    <div className="ledger-entry-value">
+                      <strong className={incoming ? "positive" : "negative"}>
+                        {incoming ? "+" : ""}
+                        {n(r.quantity_delta).toLocaleString("ar-EG")} لتر
+                      </strong>
+                      <small>
+                        الرصيد بعد الحركة:{" "}
+                        {n(r.running_balance).toLocaleString("ar-EG")} لتر
+                      </small>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </main>
+    </PageLayout>
+  );
+}

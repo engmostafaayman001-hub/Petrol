@@ -8,8 +8,9 @@ type IconName = 'home' | 'sales' | 'service' | 'truck' | 'tank' | 'shift' | 'led
 type Item = { href: string; label: string; icon: IconName; capability?: Capability };
 const groups: { label: string; items: Item[] }[] = [
   { label: 'الرئيسية', items: [{ href: '/', label: 'لوحة التحكم', icon: 'home' }, { href: '/reconciliation', label: 'الوردية الحالية', icon: 'shift', capability: 'reconciliation:open' }] },
-  { label: 'العمليات', items: [{ href: '/sales', label: 'المبيعات', icon: 'sales', capability: 'sale:create' }, { href: '/deliveries', label: 'التوريدات', icon: 'truck', capability: 'delivery:create' }, { href: '/services', label: 'الخدمات', icon: 'service', capability: 'sale:create' }, { href: '/tanks', label: 'الخزانات والمخزون', icon: 'tank', capability: 'tank:manage' }] },
+  { label: 'العمليات', items: [{ href: '/sales', label: 'المبيعات', icon: 'sales', capability: 'sale:create' }, { href: '/deliveries', label: 'التوريدات', icon: 'truck', capability: 'delivery:create' }, { href: '/fuel', label: 'الوقود والخزانات', icon: 'tank', capability: 'fuel_type:manage' }, { href: '/services', label: 'الخدمات', icon: 'service', capability: 'sale:create' }, { href: '/tanks', label: 'الخزانات والمخزون', icon: 'tank', capability: 'tank:manage' }] },
   { label: 'المتابعة', items: [{ href: '/ledger', label: 'سجل العمليات', icon: 'ledger', capability: 'audit:read' }, { href: '/expenses', label: 'المصروفات', icon: 'expense', capability: 'expense:create' }, { href: '/reports/daily', label: 'التقارير', icon: 'chart', capability: 'report:export' }] },
+  { label: 'الحسابات', items: [{ href: '/customers', label: 'العملاء والحسابات', icon: 'users', capability: 'customer:manage' }, { href: '/suppliers', label: 'الموردون', icon: 'truck', capability: 'supplier:payment' }] },
   { label: 'الإدارة', items: [{ href: '/users', label: 'المستخدمون والصلاحيات', icon: 'users', capability: 'user:manage' }, { href: '/settings', label: 'الإعدادات', icon: 'settings', capability: 'settings:manage' }] },
 ];
 

@@ -1,4 +1,5 @@
 import '../styles/globals.css';
+import Head from 'next/head';
 import { AuthProvider } from '../src/lib/auth';
 import { ThemeProvider } from '../src/lib/theme';
 import InstallAppPrompt from '../src/components/InstallAppPrompt';
@@ -9,6 +10,7 @@ export default function App(props: any) {
   const { Component, pageProps } = props;
   return (
     <ThemeProvider>
+      <Head><title>التعاون - إدارة محطات الوقود</title></Head>
       <AuthProvider>
         <ToastProvider><RoleRouteGuard><Component {...pageProps} /></RoleRouteGuard></ToastProvider>
         <InstallAppPrompt />

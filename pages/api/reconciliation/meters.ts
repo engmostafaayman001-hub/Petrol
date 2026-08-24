@@ -1,10 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
+import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
   const stationId = String(req.query.stationId || '');
   if (!stationId) return res.status(400).json({ error: 'معرف المحطة مطلوب.' });
+  try { await requireStationOperator(req, stationId); } catch (error: any) { return res.status(401).json({ error: error.message }); }
   const { data, error } = await getServiceSupabase()
     .from('pump_meters')
     .select('id, code, name, tank_id, tanks(code, name, fuel_type_id, fuel_types(name))')

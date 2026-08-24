@@ -3,9 +3,9 @@ import Link from 'next/link';
 import PageLayout from '../../src/components/PageLayout';
 import FormField from '../../src/components/FormField';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
-import supabase from '../../src/lib/supabaseClient';
 import { useRequireAuth } from '../../src/lib/auth';
 import { useCurrentStationId } from '../../src/lib/station';
+import supabase from '../../src/lib/supabaseClient';
 
 type FuelTypeOption = { id: string; name: string; code: string };
 type Tank = {
@@ -128,8 +128,10 @@ export default function TankSettings() {
     }
 
     try {
+      const { data: auth } = await supabase.auth.getSession();
+      const authHeader: Record<string, string> = auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {};
       const response = await fetch('/api/settings/tanks', {
-        method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
+        method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify(editing ? { ...payload, id: editing.id } : payload),
       });
       const result = await response.json().catch(() => ({}));
@@ -145,15 +147,17 @@ export default function TankSettings() {
   }
 
   async function removeTank(tank: Tank) {
-    if (!window.confirm(`هل تريد تعطيل الخزان ${tank.code}؟`)) return;
+    if (!window.confirm(`هل تريد حذف الخزان ${tank.code}؟ سيتم إخفاؤه من التشغيل مع الحفاظ على سجله.`)) return;
     setMessage('');
-    const response = await fetch('/api/settings/tanks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...tank, station_id: stationId, is_active: false, status: 'decommissioned' }) });
+    const { data: auth } = await supabase.auth.getSession();
+    const authHeader: Record<string, string> = auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {};
+    const response = await fetch('/api/settings/tanks', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeader }, body: JSON.stringify({ ...tank, station_id: stationId, is_active: false, status: 'decommissioned' }) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage(result.error || 'تعذر تعطيل الخزان.');
+      setMessage(result.error || 'تعذر حذف الخزان.');
       return;
     }
-    setMessage('تم تعطيل الخزان.');
+    setMessage('تم حذف الخزان من التشغيل مع الحفاظ على السجل.');
     await loadData();
   }
 
@@ -222,7 +226,7 @@ export default function TankSettings() {
             className="w-full border rounded px-3 py-2"
           >
             <option value="">اختر نوع الوقود</option>
-            {fuelTypes.map((fuel) => (
+            {fuelTypes.filter((fuel) => fuel.id === form.fuel_type_id || tanks.every((tank) => tank.fuel_type_id !== fuel.id)).map((fuel) => (
               <option key={fuel.id} value={fuel.id}>
                 {fuel.code} - {fuel.name}
               </option>
@@ -358,7 +362,7 @@ export default function TankSettings() {
                             تعديل
                           </button>
                           <button className="ui-button danger" type="button" onClick={() => removeTank(tank)}>
-                            تعطيل
+                            حذف
                           </button>
                         </td>
                       </tr>

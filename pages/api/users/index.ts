@@ -16,7 +16,7 @@ async function managerFromRequest(req: NextApiRequest) {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const manager = await managerFromRequest(req);
-  if (!manager) return res.status(403).json({ error: 'هذه العملية متاحة لمدير المحطة فقط.' });
+  if (!manager) return res.status(403).json({ error: 'إدارة المستخدمين متاحة لمدير المحطة فقط.' });
   const supabase = getServiceSupabase();
   try {
     if (req.method === 'GET') {

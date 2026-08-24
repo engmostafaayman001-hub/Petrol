@@ -16,12 +16,51 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const operator = await requireStationOperator(req, station_id);
     const supabase = getServiceSupabase();
+    const { data: activeMeters, error: metersError } = await supabase
+      .from('pump_meters')
+      .select('id,tank_id,meter_slot')
+      .eq('station_id', station_id)
+      .eq('is_active', true)
+      .order('tank_id')
+      .order('meter_slot');
+    if (metersError) return res.status(500).json({ error: metersError.message });
+    const { data: shift, error: shiftError } = await supabase
+      .from('shifts')
+      .select('id')
+      .eq('id', shift_id)
+      .eq('station_id', station_id)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (shiftError) return res.status(500).json({ error: shiftError.message });
+    if (!shift) return res.status(400).json({ error: 'الوردية المختارة غير صالحة لهذه المحطة. حدّث الصفحة واختر وردية متاحة.' });
+    const submittedReadings = new Map((opening_meters as any[]).map((item) => [String(item?.meter_id || ''), Number(item?.reading)]));
+    const missingMeters = (activeMeters || []).filter((meter) => !submittedReadings.has(meter.id) || !Number.isFinite(submittedReadings.get(meter.id)) || (submittedReadings.get(meter.id) as number) < 0);
+    if (missingMeters.length) return res.status(400).json({ error: `أدخل قراءة البداية للعدادات التالية: ${missingMeters.map((meter) => meter.id.slice(0, 8)).join('، ')}` });
+    const normalizedMeters = (activeMeters || []).map((meter) => ({ meter_id: meter.id, reading: submittedReadings.get(meter.id) }));
+    if (opening_meters.length !== normalizedMeters.length) return res.status(400).json({ error: 'يجب إرسال قراءة واحدة لكل عداد نشط فقط.' });
+    const { data: activeTanks, error: tanksError } = await supabase
+      .from('v_tank_status')
+      .select('tank_id,system_quantity')
+      .eq('station_id', station_id)
+      .eq('is_active', true)
+      .eq('status', 'operational');
+    if (tanksError) return res.status(500).json({ error: tanksError.message });
+    if (!activeTanks?.length) return res.status(400).json({ error: 'لا توجد خزانات تشغيلية لفتح الوردية.' });
+    const normalizedTanks = activeTanks.map((tank) => ({ tank_id: tank.tank_id, reading: Number(tank.system_quantity || 0) }));
+    console.info('reconciliation/open normalized payload:', {
+      tanks: normalizedTanks.length,
+      meters: normalizedMeters.length,
+      metersByTank: (activeMeters || []).reduce((groups: Record<string, number[]>, meter) => {
+        (groups[meter.tank_id] ||= []).push(meter.meter_slot);
+        return groups;
+      }, {}),
+    });
 
     const { data, error } = await supabase.rpc('fn_open_reconciliation', {
       p_station_id: station_id,
       p_shift_id: shift_id,
-      p_opening_meters: opening_meters,
-      p_opening_tanks: opening_tanks,
+      p_opening_meters: normalizedMeters,
+      p_opening_tanks: normalizedTanks,
       p_operator_id: operator.id,
     });
 

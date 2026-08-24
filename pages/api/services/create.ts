@@ -11,13 +11,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (service_type === 'other' && !String(service_name || '').trim()) return res.status(400).json({ error: 'اكتب اسم الخدمة عند اختيار أخرى.' });
   const supabase = getRequestSupabase(req);
   if (!supabase) return res.status(401).json({ error: 'يجب تسجيل الدخول لإضافة خدمة.' });
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) return res.status(401).json({ error: 'جلسة تسجيل الدخول غير صالحة.' });
   const { data, error } = await supabase.rpc('fn_create_service_sale', {
     p_station_id: station_id,
     p_service_type: service_type,
     p_service_name: service_type === 'other' ? String(service_name).trim() : null,
     p_vehicle_type: String(vehicle_type || '').trim() || null,
     p_amount: value,
-    p_operator_id: operator_id || null,
+    p_operator_id: authData.user.id,
   });
   if (error) {
     if (error.code === 'PGRST202') return res.status(503).json({ error: 'ميزة الخدمات غير مفعلة بعد. طبّق آخر migrations على قاعدة Supabase ثم أعد المحاولة.' });

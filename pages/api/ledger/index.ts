@@ -1,9 +1,11 @@
 import getServiceSupabase from '../../../src/lib/supabaseServer';
+import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
 
 export default async function handler(req: any, res: any) {
   try {
     const stationId = String(req.query.stationId || '').trim();
     if (!stationId) return res.status(400).json({ error: 'stationId is required' });
+    await requireStationOperator(req, stationId);
     const supabase = getServiceSupabase();
     const [{ data, error }, { data: expenses, error: expensesError }] = await Promise.all([
       supabase.from('v_ledger_feed').select('*').eq('station_id', stationId).order('occurred_at', { ascending: false }).limit(300),

@@ -37,7 +37,7 @@ begin
 
   select coalesce(jsonb_agg(row_to_json(q) order by q.created_at), '[]'::jsonb) into v_sales
     from (
-      select x.id, x.business_date, x.created_at, x.quantity, x.unit_price, x.gross_amount,
+      select x.id, x.business_date, x.created_at, x.quantity, x.unit_price, x.gross_amount, x.paid_amount,
              x.tank_id, x.fuel_type_id, x.pump_label, x.meter_open, x.meter_close,
              x.created_by, p.full_name as created_by_name, f.code as fuel_code, f.name as fuel_name,
              t.code as tank_code
@@ -68,7 +68,8 @@ begin
     from (
       select f.name as fuel_name, f.code as fuel_code,
              public.fn_vol(coalesce(sum(x.quantity), 0)) as sold_quantity,
-             round(coalesce(sum(x.gross_amount), 0), 2) as collected,
+             round(coalesce(sum(x.gross_amount), 0), 2) as revenue,
+             round(coalesce(sum(x.paid_amount), 0), 2) as collected,
              public.fn_vol(coalesce((select sum(d.quantity) from public.deliveries d
                where d.station_id = s.station_id and d.business_date = s.business_date
                  and d.shift_id = s.shift_id and d.status = 'active' and d.fuel_type_id = f.id), 0)) as delivered_quantity,
@@ -93,7 +94,9 @@ begin
       'total_variance', s.total_variance
     ),
     'sales', v_sales, 'deliveries', v_deliveries, 'by_fuel', v_by_fuel,
-    'total_collected', coalesce((select sum((item->>'gross_amount')::numeric) from jsonb_array_elements(v_sales) item), 0),
+    'total_revenue', coalesce((select sum((item->>'gross_amount')::numeric) from jsonb_array_elements(v_sales) item), 0),
+    'total_collected', coalesce((select sum((item->>'paid_amount')::numeric) from jsonb_array_elements(v_sales) item), 0),
+    'total_remaining', greatest(coalesce((select sum((item->>'gross_amount')::numeric - item->>'paid_amount') from jsonb_array_elements(v_sales) item), 0), 0),
     'total_delivered_cost', coalesce((select sum((item->>'total_cost')::numeric) from jsonb_array_elements(v_deliveries) item), 0),
     'sold_quantity', coalesce((select sum((item->>'quantity')::numeric) from jsonb_array_elements(v_sales) item), 0),
     'delivered_quantity', coalesce((select sum((item->>'quantity')::numeric) from jsonb_array_elements(v_deliveries) item), 0),

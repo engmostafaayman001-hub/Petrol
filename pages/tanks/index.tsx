@@ -4,6 +4,7 @@ import PageLayout from '../../src/components/PageLayout';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
 import { useRequireAuth } from '../../src/lib/auth';
 import { useCurrentStationId } from '../../src/lib/station';
+import supabase from '../../src/lib/supabaseClient';
 
 type Tank = { tank_id: string; tank_code?: string; tank_name?: string; fuel_name?: string; system_quantity?: number; available_quantity?: number; capacity?: number; fill_pct?: number; status?: string; below_minimum?: boolean; ullage?: number };
 const number = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -12,7 +13,7 @@ const format = (value: unknown) => new Intl.NumberFormat('ar-EG', { maximumFract
 export default function TanksPage() {
   const { user } = useRequireAuth(); const stationId = useCurrentStationId(user?.id ?? null);
   const [tanks, setTanks] = useState<Tank[]>([]); const [state, setState] = useState<'loading'|'ready'|'error'>('loading'); const [filter, setFilter] = useState('الكل');
-  const load = useCallback(async () => { if (!stationId) return; setState('loading'); try { const response = await fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`); const data = await response.json(); if (!response.ok) throw new Error(data.error); setTanks(data.tanks || []); setState('ready'); } catch { setState('error'); } }, [stationId]);
+  const load = useCallback(async () => { if (!stationId) return; setState('loading'); try { const { data: auth } = await supabase.auth.getSession(); const headers: Record<string, string> = auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}; const response = await fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`, { headers }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setTanks(data.tanks || []); setState('ready'); } catch { setState('error'); } }, [stationId]);
   useEffect(() => { if (stationId) load(); }, [stationId, load]);
   const summary = useMemo(() => tanks.reduce((total, tank) => ({ stock: total.stock + number(tank.system_quantity), available: total.available + number(tank.available_quantity), capacity: total.capacity + number(tank.capacity), low: total.low + (tank.below_minimum ? 1 : 0) }), { stock: 0, available: 0, capacity: 0, low: 0 }), [tanks]);
   const fuels = useMemo(() => Object.values(tanks.reduce<Record<string, { name: string; stock: number; capacity: number; tanks: number }>>((result, tank) => { const name = tank.fuel_name || 'غير محدد'; const item = result[name] || { name, stock: 0, capacity: 0, tanks: 0 }; item.stock += number(tank.system_quantity); item.capacity += number(tank.capacity); item.tanks += 1; result[name] = item; return result; }, {})), [tanks]);

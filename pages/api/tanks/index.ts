@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
+import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -14,6 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!stationId) {
       return res.status(400).json({ error: 'stationId is required' });
     }
+    await requireStationOperator(req, stationId);
 
     const supabase = getServiceSupabase();
     const { data, error } = await supabase
@@ -26,7 +28,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ tanks: data });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    const message = err.message || 'تعذر تحميل الخزانات.';
+    const status = /جلسة|تسجيل الدخول|صلاحية|المحطة/i.test(message) ? 401 : 500;
+    console.error('tanks API error:', message);
+    return res.status(status).json({ error: message });
   }
 }
 

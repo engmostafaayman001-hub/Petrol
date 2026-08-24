@@ -33,7 +33,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
     if (!uuid.test(resolvedMeterId)) return res.status(400).json({ error: 'معرّف العداد غير صالح أو لا توجد قراءة افتتاح محفوظة.' });
-    const { data, error } = await supabase.rpc('fn_record_closing_meter', { p_session_id: session_id, p_meter_id: resolvedMeterId, p_meter_reading: reading });
-    if (error) return res.status(400).json({ error: error.message, details: error.details ?? null, hint: error.hint ?? null }); return res.status(200).json({ result: data });
-  } catch (error: any) { return res.status(500).json({ error: error.message || 'خطأ داخلي أثناء حفظ القراءة.' }); }
+    let { data, error } = await supabase.rpc('fn_record_closing_meter', { p_session_id: session_id, p_meter_id: resolvedMeterId, p_meter_reading: reading });
+    // Older databases expose the two-argument compatibility RPC. Keep old open sessions usable while migrations propagate.
+    if (error?.code === 'PGRST202') {
+      ({ data, error } = await supabase.rpc('fn_record_closing_meter', { p_session_id: session_id, p_meter_reading: reading }));
+    }
+    if (error) return res.status(400).json({ error: error.message, code: error.code ?? null, details: error.details ?? null, hint: error.hint ?? null }); return res.status(200).json({ result: data });
+  } catch (error: any) {
+    console.error('reconciliation/record error:', error);
+    return res.status(500).json({ error: error.message || 'خطأ داخلي أثناء حفظ القراءة.' });
+  }
 }

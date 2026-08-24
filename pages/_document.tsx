@@ -5,7 +5,6 @@ export default class MyDocument extends Document {
     return (
       <Html lang="ar" dir="rtl" data-scroll-behavior="smooth">
       <Head>
-        <title>التعاون - إدارة محطات الوقود</title>
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#1769f5" />
           <meta name="description" content="منصة التعاون لإدارة مخزون ومبيعات وتوريدات محطات الوقود." />

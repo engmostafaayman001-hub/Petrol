@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     supabase.from('profiles').select('id, full_name').eq('id', authData.user.id).maybeSingle(),
     supabase.from('shifts').select('id, code, name, seq, shift_period').eq('station_id', stationId).eq('is_active', true).order('seq'),
     supabase.from('pump_meters').select('id, code, name, tank_id').eq('station_id', stationId).eq('is_active', true).order('code'),
-    supabase.from('v_tank_status').select('tank_id, tank_code, tank_name, fuel_type_id, fuel_code, fuel_name, capacity, status, is_active').eq('station_id', stationId).eq('is_active', true).eq('status', 'operational').order('tank_code'),
+    supabase.from('v_tank_status').select('tank_id, tank_code, tank_name, fuel_type_id, fuel_code, fuel_name, capacity, system_quantity, status, is_active').eq('station_id', stationId).eq('is_active', true).eq('status', 'operational').order('tank_code'),
   ]);
   const failed = [profileResult, shiftsResult, metersResult, tanksResult].find((result) => result.error);
   if (failed?.error) return res.status(500).json({ error: failed.error.message });

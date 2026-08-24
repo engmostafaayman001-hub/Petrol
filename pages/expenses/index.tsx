@@ -1,39 +1,612 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import PageLayout from '../../src/components/PageLayout';
-import { Button, PageHeader, SectionCard, StatusBadge } from '../../src/components/ui';
-import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
-import { useToast } from '../../src/components/ToastProvider';
-import { useRequireAuth, useRole } from '../../src/lib/auth';
-import { useCurrentStationId } from '../../src/lib/station';
-import supabase from '../../src/lib/supabaseClient';
+import React, { useCallback, useEffect, useState } from "react";
+import PageLayout from "../../src/components/PageLayout";
+import {
+  Button,
+  PageHeader,
+  SectionCard,
+  StatusBadge,
+} from "../../src/components/ui";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../../src/components/DataState";
+import { useToast } from "../../src/components/ToastProvider";
+import { useRequireAuth, useRole } from "../../src/lib/auth";
+import { useCurrentStationId } from "../../src/lib/station";
+import supabase from "../../src/lib/supabaseClient";
+import { printDetails } from "../../src/lib/printDetails";
 
-type Expense = { id: string; session_id: string; shift_name?: string | null; shift_code?: string | null; business_date: string; category: string; description: string; amount: number; status: 'pending' | 'approved' | 'rejected'; created_by_name?: string | null; created_at: string; decision_note?: string };
-type Session = { id: string; business_date: string; shift_name?: string; shift_code?: string; status: string };
-const statusLabel = (status: Expense['status']) => status === 'approved' ? 'معتمد' : status === 'rejected' ? 'مرفوض' : 'معلّق';
-const statusTone = (status: Expense['status']) => status === 'approved' ? 'success' : status === 'rejected' ? 'danger' : 'warning';
-const money = (value: number) => `${Number(value || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م`;
+type Expense = {
+  id: string;
+  session_id: string;
+  shift_name?: string | null;
+  shift_code?: string | null;
+  business_date: string;
+  category: string;
+  description: string;
+  amount: number;
+  status: "pending" | "approved" | "rejected";
+  created_by_name?: string | null;
+  created_at: string;
+  decision_note?: string;
+};
+type Session = {
+  id: string;
+  business_date: string;
+  shift_name?: string;
+  shift_code?: string;
+  status: string;
+};
+const statusLabel = (status: Expense["status"]) =>
+  status === "approved" ? "معتمد" : status === "rejected" ? "مرفوض" : "معلّق";
+const statusTone = (status: Expense["status"]) =>
+  status === "approved"
+    ? "success"
+    : status === "rejected"
+      ? "danger"
+      : "warning";
+const money = (value: number) =>
+  `${Number(value || 0).toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م`;
 const shiftLabel = (name?: string | null, code?: string | null) => {
-  const value = (name || code || '').trim();
+  const value = (name || code || "").trim();
   const numbered = value.match(/^shift\s*(\d+)$/i);
   if (numbered) return `الوردية ${numbered[1]}`;
-  if (/^morning$/i.test(value)) return 'الوردية الصباحية';
-  if (/^evening$/i.test(value)) return 'الوردية المسائية';
-  return value || 'وردية غير محددة';
+  if (/^morning$/i.test(value)) return "الوردية الصباحية";
+  if (/^evening$/i.test(value)) return "الوردية المسائية";
+  return value || "وردية غير محددة";
 };
 
 export default function ExpensesPage() {
-  const { user } = useRequireAuth(); const { role } = useRole(); const stationId = useCurrentStationId(user?.id ?? null); const { notify } = useToast();
-  const [expenses, setExpenses] = useState<Expense[]>([]); const [sessions, setSessions] = useState<Session[]>([]); const [sessionId, setSessionId] = useState(''); const [category, setCategory] = useState('تشغيل'); const [description, setDescription] = useState(''); const [amount, setAmount] = useState(''); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [formOpen, setFormOpen] = useState(false); const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null); const [error, setError] = useState('');
-  const load = useCallback(async () => { if (!stationId) return; setLoading(true); setError(''); try { const { data: auth } = await supabase.auth.getSession(); const headers: HeadersInit = auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}; const [expenseResponse, sessionResponse] = await Promise.all([fetch(`/api/expenses/list?stationId=${encodeURIComponent(stationId)}`, { headers }), fetch(`/api/reconciliation/list?stationId=${encodeURIComponent(stationId)}`, { headers })]); const expenseData = await expenseResponse.json(); const sessionData = await sessionResponse.json(); if (!expenseResponse.ok) throw new Error(expenseData.error); if (!sessionResponse.ok) throw new Error(sessionData.error); setExpenses(expenseData.expenses || []); const open = (sessionData.sessions || []).filter((item: Session) => item.status === 'open'); setSessions(open); setSessionId((current) => current || open[0]?.id || ''); } catch (reason: any) { setError(reason.message || 'تعذر تحميل المصروفات.'); } finally { setLoading(false); } }, [stationId]);
-  useEffect(() => { if (stationId) load(); }, [stationId, load]);
-  async function createExpense(event: React.FormEvent) { event.preventDefault(); const value = Number(amount); if (!stationId || !sessionId || !description.trim() || !Number.isFinite(value) || value <= 0) { setError('اختر جلسة مفتوحة وأكمل وصف المصروف والمبلغ.'); return; } setSaving(true); setError(''); try { const { data: auth } = await supabase.auth.getSession(); const response = await fetch('/api/expenses/create', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}) }, body: JSON.stringify({ station_id: stationId, session_id: sessionId, category, description: description.trim(), amount: value }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setDescription(''); setAmount(''); setFormOpen(false); notify('تم تسجيل المصروف وبانتظار اعتماد المدير.'); await load(); } catch (reason: any) { setError(reason.message || 'تعذر حفظ المصروف.'); } finally { setSaving(false); } }
-  async function decide(id: string, approved: boolean) { try { const { data: auth } = await supabase.auth.getSession(); const response = await fetch('/api/expenses/decide', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}) }, body: JSON.stringify({ id, approved }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); notify(approved ? 'تم اعتماد المصروف.' : 'تم رفض المصروف.'); await load(); } catch (reason: any) { setError(reason.message || 'تعذر حفظ قرار المصروف.'); } }
-  const approvedTotal = expenses.filter((item) => item.status === 'approved').reduce((total, item) => total + Number(item.amount || 0), 0); const pendingCount = expenses.filter((item) => item.status === 'pending').length;
-  return <PageLayout title="المصروفات"><div className="expenses-page"><PageHeader eyebrow="الإدارة المالية" title="المصروفات" description="سجل المصروفات المرتبطة بالوردية، واعتمدها ضمن دورة العمل اليومية." actions={<><Button onClick={() => { setError(''); setFormOpen(true); }}>إضافة مصروف</Button><Button variant="secondary" onClick={load}>تحديث</Button></>} />
-    <section className="expenses-summary"><article><small>إجمالي المصروفات المعتمدة</small><strong>{money(approvedTotal)}</strong><span>تدخل في صافي ربح التقارير</span></article><article><small>مصروفات بانتظار الاعتماد</small><strong>{pendingCount}</strong><span>تحتاج مراجعة المدير</span></article><article><small>الوردية المفتوحة</small><strong>{sessions.length}</strong><span>يمكن ربط مصروف جديد بها</span></article></section>
-    <div className="expenses-grid"><SectionCard title="سجل المصروفات" description="المصروفات المعتمدة فقط تؤثر في صافي الربح.">{loading ? <LoadingState /> : error ? <ErrorState onRetry={load} /> : expenses.length === 0 ? <EmptyState title="لا توجد مصروفات" description="اضغط إضافة مصروف لتسجيل أول مصروف." /> : <div className="expenses-list">{expenses.map((expense) => <article className="expense-card" key={expense.id}><header className="expense-card-header"><div><b>{expense.category}</b><small>{expense.business_date} · {shiftLabel(expense.shift_name, expense.shift_code)}</small></div><button className="ui-button secondary expense-view-button" onClick={() => setSelectedExpense(expense)}>عرض</button></header><div className="expense-card-body"><p>{expense.description}</p><div><span>المبلغ</span><strong>{money(expense.amount)}</strong></div><div><span>أضافه</span><b>{expense.created_by_name || 'غير معروف'}</b></div><StatusBadge tone={statusTone(expense.status)}>{statusLabel(expense.status)}</StatusBadge></div>{role === 'manager' && expense.status === 'pending' && <footer className="expenses-actions"><button className="ui-button" onClick={() => decide(expense.id, true)}>اعتماد</button><button className="ui-button danger" onClick={() => decide(expense.id, false)}>رفض</button></footer>}</article>)}</div>}</SectionCard></div>
-    {selectedExpense && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="expense-details-title" onMouseDown={() => setSelectedExpense(null)}><section className="ui-card form-card modal-card expense-details-modal" onMouseDown={(event) => event.stopPropagation()}><header className="section-card-header"><div><h3 id="expense-details-title">تفاصيل المصروف</h3><p>{selectedExpense.business_date} · {shiftLabel(selectedExpense.shift_name, selectedExpense.shift_code)}</p></div><button type="button" className="modal-close" aria-label="إغلاق تفاصيل المصروف" onClick={() => setSelectedExpense(null)}>×</button></header><dl className="expense-details"><div><dt>التصنيف</dt><dd>{selectedExpense.category}</dd></div><div><dt>الوصف</dt><dd>{selectedExpense.description}</dd></div><div><dt>المبلغ</dt><dd>{money(selectedExpense.amount)}</dd></div><div><dt>الوردية</dt><dd>{shiftLabel(selectedExpense.shift_name, selectedExpense.shift_code)}</dd></div><div><dt>أضافه</dt><dd>{selectedExpense.created_by_name || 'غير معروف'}</dd></div><div><dt>الحالة</dt><dd><StatusBadge tone={statusTone(selectedExpense.status)}>{statusLabel(selectedExpense.status)}</StatusBadge></dd></div>{selectedExpense.decision_note && <div><dt>ملاحظة الإجراء</dt><dd>{selectedExpense.decision_note}</dd></div>}</dl>{role === 'manager' && selectedExpense.status === 'pending' && <div className="form-actions expense-details-actions"><Button onClick={() => { decide(selectedExpense.id, true); setSelectedExpense(null); }}>اعتماد المصروف</Button><Button variant="danger" onClick={() => { decide(selectedExpense.id, false); setSelectedExpense(null); }}>رفض المصروف</Button></div>}</section></div>}
-    {formOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="expense-form-title" onMouseDown={() => setFormOpen(false)}><section className="ui-card form-card modal-card" onMouseDown={(event) => event.stopPropagation()}><header className="section-card-header"><div><h3 id="expense-form-title">إضافة مصروف</h3><p>المشرف يسجل المصروف، والمدير يعتمد أثره المالي.</p></div><button type="button" className="modal-close" aria-label="إغلاق نافذة إضافة المصروف" onClick={() => setFormOpen(false)}>×</button></header><form onSubmit={createExpense} className="form-grid"><div className="form-field form-field-full"><label htmlFor="expense-session">الوردية المفتوحة <span aria-hidden="true">*</span></label><select id="expense-session" required value={sessionId} onChange={(event) => setSessionId(event.target.value)} disabled={!sessions.length}><option value="">اختر الوردية</option>{sessions.map((session) => <option key={session.id} value={session.id}>{session.shift_name || session.shift_code || 'وردية'} · {session.business_date}</option>)}</select>{!sessions.length && <small>افتح وردية قبل تسجيل المصروف.</small>}</div><div className="form-field"><label htmlFor="expense-category">التصنيف <span aria-hidden="true">*</span></label><select id="expense-category" value={category} onChange={(event) => setCategory(event.target.value)}><option>تشغيل</option><option>صيانة</option><option>نقل</option><option>مستلزمات</option><option>أخرى</option></select></div><div className="form-field"><label htmlFor="expense-amount">المبلغ بالجنيه <span aria-hidden="true">*</span></label><input id="expense-amount" required min="0.01" step="0.01" inputMode="decimal" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /></div><div className="form-field form-field-full"><label htmlFor="expense-description">وصف المصروف <span aria-hidden="true">*</span></label><textarea id="expense-description" required minLength={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="اكتب سبب المصروف وتفاصيله" /></div><div className="form-actions form-field-full"><Button type="submit" loading={saving} disabled={!sessions.length}>حفظ المصروف</Button></div></form></section></div>}
-      {formOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="expense-form-title" onMouseDown={() => setFormOpen(false)}><section className="ui-card form-card modal-card" onMouseDown={(event) => event.stopPropagation()}><header className="section-card-header"><div><h3 id="expense-form-title">إضافة مصروف</h3><p>المشرف يسجل المصروف، والمدير يعتمد أثره المالي.</p></div><button type="button" className="modal-close" aria-label="إغلاق نافذة إضافة المصروف" onClick={() => setFormOpen(false)}>×</button></header><form onSubmit={createExpense} className="form-grid"><div className="form-field form-field-full"><label htmlFor="expense-session">الوردية المفتوحة <span aria-hidden="true">*</span></label><select id="expense-session" required value={sessionId} onChange={(event) => setSessionId(event.target.value)} disabled={!sessions.length}><option value="">اختر الوردية</option>{sessions.map((session) => <option key={session.id} value={session.id}>{shiftLabel(session.shift_name, session.shift_code)} · {session.business_date}</option>)}</select>{!sessions.length && <small>افتح وردية قبل تسجيل المصروف.</small>}</div><div className="form-field"><label htmlFor="expense-category">التصنيف <span aria-hidden="true">*</span></label><select id="expense-category" value={category} onChange={(event) => setCategory(event.target.value)}><option>تشغيل</option><option>صيانة</option><option>نقل</option><option>مستلزمات</option><option>أخرى</option></select></div><div className="form-field"><label htmlFor="expense-amount">المبلغ بالجنيه <span aria-hidden="true">*</span></label><input id="expense-amount" required min="0.01" step="0.01" inputMode="decimal" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /></div><div className="form-field form-field-full"><label htmlFor="expense-description">وصف المصروف <span aria-hidden="true">*</span></label><textarea id="expense-description" required minLength={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="اكتب سبب المصروف وتفاصيله" /></div><div className="form-actions form-field-full"><Button type="submit" loading={saving} disabled={!sessions.length}>حفظ المصروف</Button></div></form></section></div>}
-    {error && <p className="form-error" role="alert">{error}</p>}</div></PageLayout>;
+  const { user } = useRequireAuth();
+  const { role } = useRole();
+  const stationId = useCurrentStationId(user?.id ?? null);
+  const { notify } = useToast();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionId, setSessionId] = useState("");
+  const [category, setCategory] = useState("تشغيل");
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!stationId) return;
+    setLoading(true);
+    setError("");
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const headers: HeadersInit = auth.session?.access_token
+        ? { Authorization: `Bearer ${auth.session.access_token}` }
+        : {};
+      const [expenseResponse, sessionResponse] = await Promise.all([
+        fetch(`/api/expenses/list?stationId=${encodeURIComponent(stationId)}`, {
+          headers,
+        }),
+        fetch(
+          `/api/reconciliation/list?stationId=${encodeURIComponent(stationId)}`,
+          { headers },
+        ),
+      ]);
+      const expenseData = await expenseResponse.json();
+      const sessionData = await sessionResponse.json();
+      if (!expenseResponse.ok) throw new Error(expenseData.error);
+      if (!sessionResponse.ok) throw new Error(sessionData.error);
+      setExpenses(expenseData.expenses || []);
+      const open = (sessionData.sessions || []).filter(
+        (item: Session) => item.status === "open",
+      );
+      setSessions(open);
+      setSessionId((current) => current || open[0]?.id || "");
+    } catch (reason: any) {
+      setError(reason.message || "تعذر تحميل المصروفات.");
+    } finally {
+      setLoading(false);
+    }
+  }, [stationId]);
+  useEffect(() => {
+    if (stationId) load();
+  }, [stationId, load]);
+  async function createExpense(event: React.FormEvent) {
+    event.preventDefault();
+    const value = Number(amount);
+    if (
+      !stationId ||
+      !sessionId ||
+      !description.trim() ||
+      !Number.isFinite(value) ||
+      value <= 0
+    ) {
+      setError("اختر جلسة مفتوحة وأكمل وصف المصروف والمبلغ.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const response = await fetch("/api/expenses/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(auth.session?.access_token
+            ? { Authorization: `Bearer ${auth.session.access_token}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          station_id: stationId,
+          session_id: sessionId,
+          category,
+          description: description.trim(),
+          amount: value,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setDescription("");
+      setAmount("");
+      setFormOpen(false);
+      notify("تم تسجيل المصروف وبانتظار اعتماد المدير.");
+      await load();
+    } catch (reason: any) {
+      setError(reason.message || "تعذر حفظ المصروف.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function decide(id: string, approved: boolean) {
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const response = await fetch("/api/expenses/decide", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(auth.session?.access_token
+            ? { Authorization: `Bearer ${auth.session.access_token}` }
+            : {}),
+        },
+        body: JSON.stringify({ id, approved }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      notify(approved ? "تم اعتماد المصروف." : "تم رفض المصروف.");
+      await load();
+    } catch (reason: any) {
+      setError(reason.message || "تعذر حفظ قرار المصروف.");
+    }
+  }
+  const approvedTotal = expenses
+    .filter((item) => item.status === "approved")
+    .reduce((total, item) => total + Number(item.amount || 0), 0);
+  const pendingCount = expenses.filter(
+    (item) => item.status === "pending",
+  ).length;
+  return (
+    <PageLayout title="المصروفات">
+      <div className="expenses-page">
+        <PageHeader
+          eyebrow="الإدارة المالية"
+          title="المصروفات"
+          description="سجل المصروفات المرتبطة بالوردية، واعتمدها ضمن دورة العمل اليومية."
+          actions={
+            <>
+              <Button
+                onClick={() => {
+                  setError("");
+                  setFormOpen(true);
+                }}
+              >
+                إضافة مصروف
+              </Button>
+              <Button variant="secondary" onClick={load}>
+                تحديث
+              </Button>
+            </>
+          }
+        />
+        <section className="expenses-summary">
+          <article>
+            <small>إجمالي المصروفات المعتمدة</small>
+            <strong>{money(approvedTotal)}</strong>
+            <span>تدخل في صافي ربح التقارير</span>
+          </article>
+          <article>
+            <small>مصروفات بانتظار الاعتماد</small>
+            <strong>{pendingCount}</strong>
+            <span>تحتاج مراجعة المدير</span>
+          </article>
+          <article>
+            <small>الوردية المفتوحة</small>
+            <strong>{sessions.length}</strong>
+            <span>يمكن ربط مصروف جديد بها</span>
+          </article>
+        </section>
+        <div className="expenses-grid">
+          <SectionCard
+            title="سجل المصروفات"
+            description="المصروفات المعتمدة فقط تؤثر في صافي الربح."
+          >
+            {loading ? (
+              <LoadingState />
+            ) : error ? (
+              <ErrorState onRetry={load} />
+            ) : expenses.length === 0 ? (
+              <EmptyState
+                title="لا توجد مصروفات"
+                description="اضغط إضافة مصروف لتسجيل أول مصروف."
+              />
+            ) : (
+              <div className="expenses-list">
+                {expenses.map((expense) => (
+                  <article className="expense-card" key={expense.id}>
+                    <header className="expense-card-header">
+                      <div>
+                        <b>{expense.category}</b>
+                        <small>
+                          {expense.business_date} ·{" "}
+                          {shiftLabel(expense.shift_name, expense.shift_code)}
+                        </small>
+                      </div>
+                      <button
+                        className="ui-button secondary expense-view-button"
+                        onClick={() => setSelectedExpense(expense)}
+                      >
+                        عرض
+                      </button>
+                    </header>
+                    <div className="expense-card-body">
+                      <p>{expense.description}</p>
+                      <div>
+                        <span>المبلغ</span>
+                        <strong>{money(expense.amount)}</strong>
+                      </div>
+                      <div>
+                        <span>أضافه</span>
+                        <b>{expense.created_by_name || "غير معروف"}</b>
+                      </div>
+                      <StatusBadge tone={statusTone(expense.status)}>
+                        {statusLabel(expense.status)}
+                      </StatusBadge>
+                    </div>
+                    {role === "manager" && expense.status === "pending" && (
+                      <footer className="expenses-actions">
+                        <button
+                          className="ui-button"
+                          onClick={() => decide(expense.id, true)}
+                        >
+                          اعتماد
+                        </button>
+                        <button
+                          className="ui-button danger"
+                          onClick={() => decide(expense.id, false)}
+                        >
+                          رفض
+                        </button>
+                      </footer>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
+        {selectedExpense && (
+          <div
+            className="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="expense-details-title"
+            onMouseDown={() => setSelectedExpense(null)}
+          >
+            <section
+              className="ui-card form-card modal-card expense-details-modal"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <header className="section-card-header">
+                <div>
+                  <h3 id="expense-details-title">تفاصيل المصروف</h3>
+                  <p>
+                    {selectedExpense.business_date} ·{" "}
+                    {shiftLabel(
+                      selectedExpense.shift_name,
+                      selectedExpense.shift_code,
+                    )}
+                  </p>
+                </div>
+                <div className="no-print flex gap-2">
+                  <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
+                  <button type="button" className="modal-close" aria-label="إغلاق تفاصيل المصروف" onClick={() => setSelectedExpense(null)}>×</button>
+                </div>
+              </header>
+              <dl className="expense-details">
+                <div>
+                  <dt>التصنيف</dt>
+                  <dd>{selectedExpense.category}</dd>
+                </div>
+                <div>
+                  <dt>الوصف</dt>
+                  <dd>{selectedExpense.description}</dd>
+                </div>
+                <div>
+                  <dt>المبلغ</dt>
+                  <dd>{money(selectedExpense.amount)}</dd>
+                </div>
+                <div>
+                  <dt>الوردية</dt>
+                  <dd>
+                    {shiftLabel(
+                      selectedExpense.shift_name,
+                      selectedExpense.shift_code,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>أضافه</dt>
+                  <dd>{selectedExpense.created_by_name || "غير معروف"}</dd>
+                </div>
+                <div>
+                  <dt>الحالة</dt>
+                  <dd>
+                    <StatusBadge tone={statusTone(selectedExpense.status)}>
+                      {statusLabel(selectedExpense.status)}
+                    </StatusBadge>
+                  </dd>
+                </div>
+                {selectedExpense.decision_note && (
+                  <div>
+                    <dt>ملاحظة الإجراء</dt>
+                    <dd>{selectedExpense.decision_note}</dd>
+                  </div>
+                )}
+              </dl>
+              {role === "manager" && selectedExpense.status === "pending" && (
+                <div className="form-actions expense-details-actions">
+                  <Button
+                    onClick={() => {
+                      decide(selectedExpense.id, true);
+                      setSelectedExpense(null);
+                    }}
+                  >
+                    اعتماد المصروف
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      decide(selectedExpense.id, false);
+                      setSelectedExpense(null);
+                    }}
+                  >
+                    رفض المصروف
+                  </Button>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+        {formOpen && (
+          <div
+            className="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="expense-form-title"
+            onMouseDown={() => setFormOpen(false)}
+          >
+            <section
+              className="ui-card form-card modal-card"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <header className="section-card-header">
+                <div>
+                  <h3 id="expense-form-title">إضافة مصروف</h3>
+                  <p>المشرف يسجل المصروف، والمدير يعتمد أثره المالي.</p>
+                </div>
+                <button
+                  type="button"
+                  className="modal-close"
+                  aria-label="إغلاق نافذة إضافة المصروف"
+                  onClick={() => setFormOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <form onSubmit={createExpense} className="form-grid">
+                <div className="form-field form-field-full">
+                  <label htmlFor="expense-session">
+                    الوردية المفتوحة <span aria-hidden="true">*</span>
+                  </label>
+                  <select
+                    id="expense-session"
+                    required
+                    value={sessionId}
+                    onChange={(event) => setSessionId(event.target.value)}
+                    disabled={!sessions.length}
+                  >
+                    <option value="">اختر الوردية</option>
+                    {sessions.map((session) => (
+                      <option key={session.id} value={session.id}>
+                        {session.shift_name || session.shift_code || "وردية"} ·{" "}
+                        {session.business_date}
+                      </option>
+                    ))}
+                  </select>
+                  {!sessions.length && (
+                    <small>افتح وردية قبل تسجيل المصروف.</small>
+                  )}
+                </div>
+                <div className="form-field">
+                  <label htmlFor="expense-category">
+                    التصنيف <span aria-hidden="true">*</span>
+                  </label>
+                  <select
+                    id="expense-category"
+                    value={category}
+                    onChange={(event) => setCategory(event.target.value)}
+                  >
+                    <option>تشغيل</option>
+                    <option>صيانة</option>
+                    <option>نقل</option>
+                    <option>مستلزمات</option>
+                    <option>أخرى</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label htmlFor="expense-amount">
+                    المبلغ بالجنيه <span aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="expense-amount"
+                    required
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
+                    type="number"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="form-field form-field-full">
+                  <label htmlFor="expense-description">
+                    وصف المصروف <span aria-hidden="true">*</span>
+                  </label>
+                  <textarea
+                    id="expense-description"
+                    required
+                    minLength={2}
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="اكتب سبب المصروف وتفاصيله"
+                  />
+                </div>
+                <div className="form-actions form-field-full">
+                  <Button
+                    type="submit"
+                    loading={saving}
+                    disabled={!sessions.length}
+                  >
+                    حفظ المصروف
+                  </Button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+        {formOpen && (
+          <div
+            className="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="expense-form-title"
+            onMouseDown={() => setFormOpen(false)}
+          >
+            <section
+              className="ui-card form-card modal-card"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <header className="section-card-header">
+                <div>
+                  <h3 id="expense-form-title">إضافة مصروف</h3>
+                  <p>المشرف يسجل المصروف، والمدير يعتمد أثره المالي.</p>
+                </div>
+                <button
+                  type="button"
+                  className="modal-close"
+                  aria-label="إغلاق نافذة إضافة المصروف"
+                  onClick={() => setFormOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <form onSubmit={createExpense} className="form-grid">
+                <div className="form-field form-field-full">
+                  <label htmlFor="expense-session">
+                    الوردية المفتوحة <span aria-hidden="true">*</span>
+                  </label>
+                  <select
+                    id="expense-session"
+                    required
+                    value={sessionId}
+                    onChange={(event) => setSessionId(event.target.value)}
+                    disabled={!sessions.length}
+                  >
+                    <option value="">اختر الوردية</option>
+                    {sessions.map((session) => (
+                      <option key={session.id} value={session.id}>
+                        {shiftLabel(session.shift_name, session.shift_code)} ·{" "}
+                        {session.business_date}
+                      </option>
+                    ))}
+                  </select>
+                  {!sessions.length && (
+                    <small>افتح وردية قبل تسجيل المصروف.</small>
+                  )}
+                </div>
+                <div className="form-field">
+                  <label htmlFor="expense-category">
+                    التصنيف <span aria-hidden="true">*</span>
+                  </label>
+                  <select
+                    id="expense-category"
+                    value={category}
+                    onChange={(event) => setCategory(event.target.value)}
+                  >
+                    <option>تشغيل</option>
+                    <option>صيانة</option>
+                    <option>نقل</option>
+                    <option>مستلزمات</option>
+                    <option>أخرى</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label htmlFor="expense-amount">
+                    المبلغ بالجنيه <span aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="expense-amount"
+                    required
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
+                    type="number"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="form-field form-field-full">
+                  <label htmlFor="expense-description">
+                    وصف المصروف <span aria-hidden="true">*</span>
+                  </label>
+                  <textarea
+                    id="expense-description"
+                    required
+                    minLength={2}
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="اكتب سبب المصروف وتفاصيله"
+                  />
+                </div>
+                <div className="form-actions form-field-full">
+                  <Button
+                    type="submit"
+                    loading={saving}
+                    disabled={!sessions.length}
+                  >
+                    حفظ المصروف
+                  </Button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    </PageLayout>
+  );
 }

@@ -1,100 +1,479 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/router';
-import PageLayout from '../../src/components/PageLayout';
-import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataState';
-import { useRequireAuth } from '../../src/lib/auth';
-import { useCurrentStationId } from '../../src/lib/station';
-import supabase from '../../src/lib/supabaseClient';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import PageLayout from "../../src/components/PageLayout";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../../src/components/DataState";
+import { useRequireAuth } from "../../src/lib/auth";
+import { useCurrentStationId } from "../../src/lib/station";
+import supabase from "../../src/lib/supabaseClient";
 
-type ShiftOption = { id: string; code: string; name: string; seq: number; shift_period?: 'morning' | 'evening' };
-type MeterOption = { id: string; code: string; name: string; tank_id: string };
-type Session = { id: string; business_date: string; shift_id?: string; shift_code?: string; shift_name?: string; shift_seq?: number; shift_period?: 'morning' | 'evening'; status: string; opened_at?: string; submitted_at?: string; variance_value?: number };
-const statusText = (value: string) => value === 'open' ? 'مفتوحة' : value === 'submitted' ? 'مغلقة' : value;
-const shiftLabel = (shift: { shift_period?: 'morning' | 'evening'; shift_seq?: number; shift_code?: string }) => shift.shift_period === 'morning' || shift.shift_seq === 1 || shift.shift_code === 'A' ? 'صباحية' : 'مسائية';
-const cairoBusinessDate = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' })
-    .formatToParts(new Date()).reduce((value, part) => ({ ...value, [part.type]: part.value }), {} as Record<string, string>);
-  return `${parts.year}-${parts.month}-${parts.day}`;
+const messageFrom = (data: any, fallback: string) =>
+  data?.error || data?.message || data?.hint || fallback;
+
+type Shift = { id: string; seq: number; shift_period?: string };
+type Meter = { id: string; code: string; name: string; tank_id: string };
+type Tank = {
+  tank_id: string;
+  tank_code: string;
+  tank_name: string;
+  fuel_name: string;
+  system_quantity?: number;
 };
-
+type Session = {
+  id: string;
+  business_date: string;
+  shift_seq?: number;
+  status: string;
+  opened_at?: string;
+  submitted_at?: string;
+  variance_value?: number;
+  total_revenue?: number;
+  total_collected?: number;
+  total_remaining?: number;
+  sold_quantity?: number;
+  sale_count?: number;
+  delivered_quantity?: number;
+  delivery_count?: number;
+  delivery_total?: number;
+  expense_total?: number;
+  net_collected?: number;
+};
+const shiftName = (shift?: { shift_period?: string; shift_seq?: number }) =>
+  shift?.shift_period === "morning" || shift?.shift_seq === 1
+    ? "صباحية"
+    : "مسائية";
+const dateInCairo = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(
+    new Date(),
+  );
 export default function ReconciliationIndex() {
-  const router = useRouter();
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [shift, setShift] = useState('');
-  const [shifts, setShifts] = useState<ShiftOption[]>([]);
-  const [meters, setMeters] = useState<MeterOption[]>([]);
-  const [meterReadings, setMeterReadings] = useState<Record<string, string>>({});
-  const [openFormVisible, setOpenFormVisible] = useState(false);
-  const [operatorName, setOperatorName] = useState('');
-  const [openingDate, setOpeningDate] = useState('');
-  const [openingTime, setOpeningTime] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [meters, setMeters] = useState<Meter[]>([]);
+  const [tanks, setTanks] = useState<Tank[]>([]);
+  const [selectedShift, setSelectedShift] = useState("");
+  const [readings, setReadings] = useState<Record<string, string>>({});
+  const [openForm, setOpenForm] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
-
+  const [detailsSession, setDetailsSession] = useState<Session | null>(null);
+  const [detailLines, setDetailLines] = useState<any[]>([]);
+  const [detailOperations, setDetailOperations] = useState<any[]>([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState("");
+  const [detailReadings, setDetailReadings] = useState<Record<string, string>>({});
+  const [savingDetailReadings, setSavingDetailReadings] = useState(false);
   const load = useCallback(async () => {
-    if (!stationId) { setSessions([]); setShifts([]); setLoading(false); return; }
-    setLoading(true); setError(null);
+    if (!stationId) return;
+    setLoading(true);
+    setError("");
     try {
-      const { data: authData } = await supabase.auth.getSession();
-      const headers: HeadersInit = authData.session?.access_token ? { Authorization: `Bearer ${authData.session.access_token}` } : {};
-      const [openDataResult, sessionResult] = await Promise.all([
-        fetch(`/api/reconciliation/open-data?stationId=${encodeURIComponent(stationId)}`, { headers }).then(async (response) => ({ ok: response.ok, body: await response.json() })),
-        fetch(`/api/reconciliation/list?stationId=${encodeURIComponent(stationId)}`, { headers }).then(async (response) => ({ ok: response.ok, body: await response.json() })),
+      const { data: auth } = await supabase.auth.getSession();
+      const headers: Record<string, string> = auth.session?.access_token
+        ? { Authorization: `Bearer ${auth.session.access_token}` }
+        : {};
+      const [openResponse, listResponse] = await Promise.all([
+        fetch(
+          `/api/reconciliation/open-data?stationId=${encodeURIComponent(stationId)}`,
+          { headers },
+        ),
+        fetch(
+          `/api/reconciliation/list?stationId=${encodeURIComponent(stationId)}`,
+          { headers },
+        ),
       ]);
-      if (!openDataResult.ok) throw new Error(openDataResult.body?.error || 'تعذر تحميل بيانات فتح الجلسة');
-      if (!sessionResult.ok) throw new Error(sessionResult.body?.error || 'تعذر تحميل جلسات التسوية');
-      const rows = (openDataResult.body?.shifts || []) as ShiftOption[];
-      const meterRows = (openDataResult.body?.meters || []) as MeterOption[];
-      setShifts(rows); setShift((current) => current || rows[0]?.id || ''); setMeters(meterRows); setSessions(sessionResult.body?.sessions || []);
-      setOperatorName(openDataResult.body?.user?.full_name || user?.email || 'المستخدم الحالي');
-      setOpeningDate(openDataResult.body?.date || cairoBusinessDate());
-      setOpeningTime(openDataResult.body?.time || new Date().toISOString());
-    } catch (reason: any) { setError(reason.message || 'تعذر تحميل البيانات'); }
-    finally { setLoading(false); }
+      const openData = await openResponse.json();
+      const listData = await listResponse.json();
+      if (!openResponse.ok)
+        throw new Error(openData.error || "تعذر تحميل بيانات فتح الوردية.");
+      if (!listResponse.ok)
+        throw new Error(listData.error || "تعذر تحميل الجلسات.");
+      setShifts(openData.shifts || []);
+      setSelectedShift((current) => current || openData.shifts?.[0]?.id || "");
+      setMeters(openData.meters || []);
+      setTanks(openData.tanks || []);
+      setSessions(listData.sessions || []);
+    } catch (reason: any) {
+      setError(reason.message || "تعذر تحميل بيانات الوردية.");
+    } finally {
+      setLoading(false);
+    }
   }, [stationId]);
-  useEffect(() => { load(); }, [load]);
-  const openSessions = useMemo(() => sessions.filter((item) => item.status === 'open'), [sessions]);
-  const archivedSessions = useMemo(() => sessions.filter((item) => item.status !== 'open'), [sessions]);
-  const availableShifts = shifts;
   useEffect(() => {
-    if (!availableShifts.length) { setShift(''); return; }
-    if (availableShifts.some((item) => item.id === shift)) return;
-    setShift(availableShifts[0]!.id);
-  }, [availableShifts, shift]);
-
+    load();
+  }, [load]);
+  const openSessions = useMemo(
+    () => sessions.filter((session) => session.status === "open"),
+    [sessions],
+  );
+  const closedSessions = useMemo(
+    () => sessions.filter((session) => session.status !== "open"),
+    [sessions],
+  );
+  const groupedMeters = useMemo(
+    () =>
+      tanks.map((tank) => ({
+        tank,
+        meters: meters
+          .filter((meter) => meter.tank_id === tank.tank_id)
+          .sort((a, b) => a.code.localeCompare(b.code)),
+      })),
+    [meters, tanks],
+  );
   async function openSession(event: React.FormEvent) {
-    event.preventDefault(); setMessage(null);
-    if (!stationId) return setMessage('لا توجد محطة مرتبطة بهذا الحساب.');
-    if (!shift) return setMessage('اختر وردية فعالة أولاً.');
-    if (!meters.length) return setMessage('لا توجد عدادات تشغيلية مرتبطة بالخزانات. أضف عدادًا نشطًا قبل فتح الوردية.');
-    const openingMeters = meters.map((item) => ({ meter_id: item.id, reading: Number(meterReadings[item.id]) }));
-    if (openingMeters.some((item) => !Number.isFinite(item.reading) || item.reading < 0)) return setMessage('سجل قراءة بداية صحيحة لكل العدادات.');
+    event.preventDefault();
+    setMessage("");
+    if (!stationId || !selectedShift)
+      return setMessage("اختر نوع الوردية أولًا.");
+    if (
+      !groupedMeters.length ||
+      groupedMeters.some(
+        (group) =>
+          group.meters.length !== 2 ||
+          new Set(group.meters.map((meter) => meter.code)).size !== 2,
+      )
+    )
+      return setMessage("يجب توفر عدادين نشطين مختلفين لكل خزان تشغيلي.");
+    const openingMeters = meters.map((meter) => ({
+      meter_id: meter.id,
+      reading: Number(readings[meter.id]),
+    }));
+    if (
+      openingMeters.length !== meters.length ||
+      openingMeters.some(
+        (item) => !Number.isFinite(item.reading) || item.reading < 0,
+      )
+    )
+      return setMessage("أدخل قراءة بداية صحيحة لكل العدادات.");
+    const openingTanks = tanks.map((tank) => ({
+      tank_id: tank.tank_id,
+      reading: Number(tank.system_quantity || 0),
+    }));
     setOpening(true);
     try {
-      const { data: authData } = await supabase.auth.getSession();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (authData.session?.access_token) headers.Authorization = `Bearer ${authData.session.access_token}`;
-      const response = await fetch('/api/reconciliation/open', { method: 'POST', headers, body: JSON.stringify({ station_id: stationId, shift_id: shift, opening_meters: openingMeters, opening_tanks: [] }) });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'تعذر فتح جلسة التسوية');
-      setOpenFormVisible(false); setMeterReadings({}); await load();
-    } catch (reason: any) { setMessage(reason.message || 'تعذر فتح الجلسة'); }
-    finally { setOpening(false); }
+      const { data: auth } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (auth.session?.access_token)
+        headers.Authorization = `Bearer ${auth.session.access_token}`;
+      const response = await fetch("/api/reconciliation/open", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          station_id: stationId,
+          shift_id: selectedShift,
+          opening_meters: openingMeters,
+          opening_tanks: openingTanks,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          [data.error, data.details, data.hint].filter(Boolean).join(" ") ||
+            "تعذر فتح الوردية.",
+        );
+      setOpenForm(false);
+      setReadings({});
+      setMessage("تم فتح الوردية وحفظ قراءتي كل عداد.");
+      await load();
+    } catch (reason: any) {
+      setMessage(reason.message || "تعذر فتح الوردية.");
+    } finally {
+      setOpening(false);
+    }
   }
-
-  return <PageLayout title="التسويات"><main className="reconciliation-page" dir="rtl">
-    <div className="page-heading"><div><span className="eyebrow">إدارة الورديات</span><h2>التسويات اليومية</h2><p>تابع الجلسات المفتوحة وسجل الجلسات التي تم اعتمادها.</p></div></div>
-    <section className="recon-stats"><article><small>الجلسات المفتوحة</small><b>{openSessions.length}</b><em>تحتاج قراءة واعتماداً</em></article><article><small>الجلسات المؤرشفة</small><b>{archivedSessions.length}</b><em>مغلقة ومتاحة للمراجعة</em></article><article><small>إجمالي الفروقات</small><b>{sessions.reduce((sum, item) => sum + Number(item.variance_value || 0), 0).toLocaleString('ar-EG')}</b><em>جنيه مصري</em></article></section>
-    <div className="page-heading"><div /><button className="btn btn-primary" onClick={() => setOpenFormVisible((visible) => !visible)} disabled={openSessions.length > 0}>{openFormVisible ? 'إغلاق النموذج' : 'فتح جلسة'}</button></div>
-    {openFormVisible && <section className="panel recon-open-form recon-dynamic-form"><div><b>نموذج فتح الجلسة</b><small>اختر أي وردية، ثم سجل قراءة بداية كل عداد. بعد إغلاقها يمكنك فتحها مرة أخرى بدورة جديدة في نفس اليوم.</small></div><form onSubmit={openSession}><div className="recon-opening-meta"><label>اسم المستخدم<input readOnly value={operatorName} /></label><label>التاريخ<input readOnly value={openingDate} /></label><label>وقت الفتح<input readOnly value={openingTime ? new Date(openingTime).toLocaleTimeString('ar-EG') : '—'} /></label></div><label>نوع الوردية<select required value={shift} onChange={(e) => setShift(e.target.value)} disabled={!availableShifts.length}><option value="">اختر الوردية</option>{availableShifts.map((item) => <option key={item.id} value={item.id}>{item.shift_period === 'morning' || (!item.shift_period && item.seq === 1) ? 'صباحية' : 'مسائية'}</option>)}</select></label><div className="recon-opening-grid single"><div><h4>قراءات العدادات والطلمبات</h4>{meters.map((item) => <label key={item.id}>{item.code} · {item.name}<input required min="0" step="0.001" type="number" value={meterReadings[item.id] || ''} onChange={(e) => setMeterReadings((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="قراءة بداية العداد" /></label>)}</div></div><button className="btn btn-primary" disabled={opening || !stationId || !shift || !availableShifts.length || !meters.length}>{opening ? 'جارٍ إنشاء الجلسة…' : 'فتح الجلسة وحفظ القراءات'}</button></form></section>}
-    {message && <div className="notice notice-warning">{message}</div>}
-    {loading ? <LoadingState /> : error ? <ErrorState onRetry={load} /> : <>
-      <section className="recon-section"><div className="recon-heading"><div><h3>الجلسات المفتوحة</h3><p>استكمل القراءات ثم أغلق الجلسة لتنتقل إلى السجل.</p></div><span>{openSessions.length}</span></div>{openSessions.length === 0 ? <EmptyState title="لا توجد جلسات مفتوحة" description="تظهر هنا الجلسات التي تحتاج إدخال القراءة واعتمادها." /> : <div className="recon-open-grid">{openSessions.map((item) => <article className="recon-session-card" key={item.id}><span className="recon-live">مفتوحة الآن</span><h4>{shiftLabel(item)}</h4><p>{item.business_date}</p><div><span>تم الفتح: {item.opened_at ? new Date(item.opened_at).toLocaleString('ar-EG') : '—'}</span><span>الفارق الحالي: {Number(item.variance_value || 0).toLocaleString('ar-EG')} ج.م</span></div><button className="btn btn-primary" onClick={() => router.push(`/reconciliation/session?sessionId=${encodeURIComponent(item.id)}`)}>متابعة الجلسة</button></article>)}</div>}</section>
-      <section className="recon-section"><div className="recon-heading"><div><h3>سجل الجلسات المغلقة</h3><p>كل جلسة مغلقة تختفي من القائمة النشطة وتنتقل هنا للمراجعة فقط.</p></div><span>{archivedSessions.length}</span></div>{archivedSessions.length === 0 ? <EmptyState title="لا يوجد سجل مغلق بعد" description="ستظهر الجلسات هنا مباشرة بعد اعتماد وإغلاق التسوية." /> : <div className="panel recon-archive"><div className="table-wrap"><table><thead><tr><th>التاريخ</th><th>الوردية</th><th>الحالة</th><th>وقت الإغلاق</th><th>الفارق</th><th /></tr></thead><tbody>{archivedSessions.map((item) => <tr key={item.id}><td>{item.business_date}</td><td>{shiftLabel(item)}</td><td><span className="status-badge status-completed">{statusText(item.status)}</span></td><td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString('ar-EG') : '—'}</td><td>{Number(item.variance_value || 0).toLocaleString('ar-EG')} ج.م</td><td><button className="btn btn-ghost btn-sm" onClick={() => router.push(`/reconciliation/session?sessionId=${encodeURIComponent(item.id)}`)}>عرض التفاصيل</button></td></tr>)}</tbody></table></div></div>}</section>
-    </>}
-  </main></PageLayout>;
+  async function showSessionDetails(session: Session) {
+    setDetailsSession(session);
+    setDetailLines([]);
+    setDetailOperations([]);
+    setDetailsError("");
+    setDetailsLoading(true);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const headers: Record<string, string> = auth.session?.access_token
+        ? { Authorization: `Bearer ${auth.session.access_token}` }
+        : {};
+      const response = await fetch(
+        `/api/reconciliation/detail?sessionId=${encodeURIComponent(session.id)}`,
+        { headers },
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر تحميل تفاصيل الجلسة.");
+      setDetailsSession(data.session || session);
+      setDetailLines(data.lines || []);
+      setDetailOperations(data.operations || []);
+      setDetailReadings(Object.fromEntries((data.lines || []).flatMap((line: any) => [
+        line.meter_id ? [`${line.id}:1`, line.closing_meter == null ? "" : String(line.closing_meter)] : [],
+        line.meter2_id ? [`${line.id}:2`, line.closing_meter2 == null ? "" : String(line.closing_meter2)] : [],
+      ])));
+    } catch (reason: any) {
+      setDetailsError(reason.message || "تعذر تحميل تفاصيل الجلسة.");
+    } finally {
+      setDetailsLoading(false);
+    }
+  }
+  async function saveDetailReadings() {
+    if (!detailsSession || detailsSession.status !== "open") return;
+    setSavingDetailReadings(true);
+    setDetailsError("");
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const headers: Record<string, string> = { "Content-Type": "application/json", ...(auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}) };
+      for (const line of detailLines) {
+        const meters = [
+          line.meter_id ? { id: line.meter_id, value: detailReadings[`${line.id}:1`], opening: line.opening_meter } : null,
+          line.meter2_id ? { id: line.meter2_id, value: detailReadings[`${line.id}:2`], opening: line.opening_meter2 } : null,
+        ].filter(Boolean) as Array<{ id: string; value: string; opening: number }>;
+        for (const meter of meters) {
+          const value = Number(meter.value);
+          if (!Number.isFinite(value) || value < Number(meter.opening)) throw new Error("تحقق من قراءات الإغلاق، ويجب ألا تقل عن قراءات البداية.");
+          const response = await fetch("/api/reconciliation/record", { method: "POST", headers, body: JSON.stringify({ session_id: detailsSession.id, meter_id: meter.id, meter_reading: value }) });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(messageFrom(data, "تعذر حفظ قراءة العداد."));
+        }
+      }
+      await showSessionDetails(detailsSession);
+    } catch (error: any) {
+      setDetailsError(error.message || "تعذر حفظ قراءات العدادات.");
+    } finally {
+      setSavingDetailReadings(false);
+    }
+  }
+  return (
+    <PageLayout title="التسويات">
+      <main className="reconciliation-page" dir="rtl">
+        <header className="page-heading">
+          <div>
+            <span className="eyebrow">إدارة الورديات</span>
+            <h2>فتح وإغلاق الوردية</h2>
+            <p>
+              لكل خزان عدادان مستقلان، أي قراءتان عند الفتح وقراءتان عند
+              الإغلاق.
+            </p>
+          </div>
+        </header>
+        <section className="recon-stats">
+          <article>
+            <small>الجلسات المفتوحة</small>
+            <b>{openSessions.length}</b>
+          </article>
+          <article>
+            <small>الجلسات المغلقة</small>
+            <b>{closedSessions.length}</b>
+          </article>
+          <article>
+            <small>إجمالي خانات القراءة</small>
+            <b>{tanks.length * 2}</b>
+            <em>{tanks.length} خزان × 2</em>
+          </article>
+        </section>
+        <div className="page-heading">
+          <div />{" "}
+          <button
+            className="btn btn-primary"
+            disabled={openSessions.length > 0}
+            onClick={() => setOpenForm((visible) => !visible)}
+          >
+            {openForm ? "إغلاق النموذج" : "فتح وردية جديدة"}
+          </button>
+        </div>
+        {openForm && (
+          <section className="panel recon-open-form recon-dynamic-form">
+            <div>
+              <b>نموذج فتح الوردية</b>
+              <small>
+                كل بطاقة تخص خزانًا واحدًا وتحتوي على العداد الأول والثاني.
+                الإجمالي الحالي: {tanks.length * 2} قراءة عداد.
+              </small>
+            </div>
+            <form onSubmit={openSession}>
+              <label>
+                نوع الوردية
+                <select
+                  required
+                  value={selectedShift}
+                  onChange={(event) => setSelectedShift(event.target.value)}
+                >
+                  <option value="">اختر الوردية</option>
+                  {shifts.map((shift) => (
+                    <option key={shift.id} value={shift.id}>
+                      {shiftName(shift)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="recon-tank-opening-grid">
+                {groupedMeters.map((group) => (
+                  <fieldset
+                    className="recon-tank-card"
+                    key={group.tank.tank_id}
+                  >
+                    <legend>
+                      {group.tank.tank_code} · {group.tank.tank_name}
+                    </legend>
+                    <p>
+                      {group.tank.fuel_name} · الرصيد الحالي{" "}
+                      {Number(group.tank.system_quantity || 0).toLocaleString(
+                        "ar-EG",
+                      )}{" "}
+                      لتر
+                    </p>
+                    <div className="meter-reading-grid">
+                      {group.meters.map((meter, index) => (
+                        <label key={meter.id}>
+                          العداد {index + 1}
+                          <small>{meter.code}</small>
+                          <input
+                            required
+                            min="0"
+                            step="0.001"
+                            type="number"
+                            value={readings[meter.id] || ""}
+                            onChange={(event) =>
+                              setReadings((current) => ({
+                                ...current,
+                                [meter.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="قراءة البداية"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
+              </div>
+              <button
+                className="btn btn-primary"
+                disabled={opening || !selectedShift || !groupedMeters.length}
+              >
+                {opening ? "جارٍ الحفظ…" : "فتح الوردية وحفظ القراءات"}
+              </button>
+            </form>
+          </section>
+        )}
+        {message && <div className="notice notice-warning">{message}</div>}
+        {loading ? (
+          <LoadingState />
+        ) : error ? (
+          <ErrorState onRetry={load} />
+        ) : (
+          <>
+            <section className="recon-section">
+              <div className="recon-heading">
+                <div>
+                  <h3>الورديات المفتوحة</h3>
+                  <p>
+                    أدخل قراءة النهاية للعدادين داخل صفحة الجلسة ثم اعتمد
+                    الإغلاق.
+                  </p>
+                </div>
+                <span>{openSessions.length}</span>
+              </div>
+              {openSessions.length ? (
+                <div className="recon-open-grid">
+                  {openSessions.map((session) => (
+                    <article className="recon-session-card" key={session.id}>
+                      <span className="recon-live">مفتوحة الآن</span>
+                      <h4>{shiftName(session)}</h4>
+                      <p>{session.business_date}</p>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => showSessionDetails(session)}
+                      >
+                        متابعة وإغلاق الوردية
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title="لا توجد ورديات مفتوحة"
+                  description="افتح وردية جديدة وسجل قراءتي كل خزان."
+                />
+              )}
+            </section>
+            <section className="recon-section">
+              <div className="recon-heading">
+                <div>
+                  <h3>سجل الورديات المغلقة</h3>
+                  <p>الورديات السابقة متاحة للمراجعة.</p>
+                </div>
+                <span>{closedSessions.length}</span>
+              </div>
+              {closedSessions.length ? (
+                <div className="panel recon-archive">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>التاريخ</th>
+                          <th>الوردية</th>
+                          <th>الحالة</th>
+                          <th>التفاصيل</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {closedSessions.map((session) => (
+                          <tr key={session.id}>
+                            <td>{session.business_date}</td>
+                            <td>{shiftName(session)}</td>
+                            <td>مغلقة</td>
+                            <td>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => showSessionDetails(session)}
+                              >
+                                عرض التفاصيل
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <EmptyState
+                  title="لا يوجد سجل مغلق"
+                  description="ستظهر الجلسات هنا بعد الإغلاق."
+                />
+              )}
+            </section>
+          </>
+        )}
+      </main>
+      {detailsSession && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={() => setDetailsSession(null)}>
+          <section className="ui-card form-card modal-card session-details-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="section-card-header">
+              <div><h3>تفاصيل الجلسة</h3><p>{detailsSession.business_date} · {shiftName(detailsSession)}</p></div>
+              <button type="button" className="modal-close" onClick={() => setDetailsSession(null)}>×</button>
+            </header>
+            {detailsLoading ? <LoadingState /> : detailsError ? <p className="form-error">{detailsError}</p> : <>
+              <div className="session-details-summary"><span>الحالة: {detailsSession.status === 'open' ? 'مفتوحة' : 'مغلقة'}</span><b>{detailLines.length} خزانات · {detailOperations.length} عملية</b></div>
+              <div className="recon-stats session-modal-stats">
+                <article><small>إجمالي المبيعات</small><b>{Number(detailsSession.total_revenue || 0).toLocaleString('ar-EG')} ج.م</b><em>{Number(detailsSession.sold_quantity || 0).toLocaleString('ar-EG')} لتر</em></article>
+                <article><small>إجمالي المحصل</small><b>{Number(detailsSession.total_collected || 0).toLocaleString('ar-EG')} ج.م</b><em>{detailsSession.sale_count || 0} عملية بيع</em></article>
+                <article><small>المتبقي</small><b>{Number(detailsSession.total_remaining || 0).toLocaleString('ar-EG')} ج.م</b><em>مبيعات آجلة</em></article>
+                <article><small>الوارد / التوريدات</small><b>{Number(detailsSession.delivery_total || 0).toLocaleString('ar-EG')} ج.م</b><em>{Number(detailsSession.delivered_quantity || 0).toLocaleString('ar-EG')} لتر · {detailsSession.delivery_count || 0} توريد</em></article>
+                <article><small>المصروفات</small><b>{Number(detailsSession.expense_total || 0).toLocaleString('ar-EG')} ج.م</b><em>المعتمد فقط</em></article>
+                <article><small>صافي المحصل</small><b>{Number(detailsSession.net_collected || 0).toLocaleString('ar-EG')} ج.م</b><em>بعد المصروفات</em></article>
+              </div>
+              <div className="session-detail-lines">{detailLines.map((line) => <article className="session-detail-line" key={line.id}><header><b>{line.tank_code} · {line.tank_name || line.fuel_name}</b><span>{line.fuel_name || 'وقود'}</span></header><div className="session-meter-grid"><div><b>العداد الأول</b><span>{line.meter_code || line.meter_name || 'غير مرتبط'}</span><small>فتح: {line.opening_meter ?? '—'} · الإغلاق: {line.closing_meter ?? '—'}</small>{detailsSession.status === 'open' && line.meter_id && <input type="number" min={line.opening_meter ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:1`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:1`]: event.target.value }))} />}</div><div><b>العداد الثاني</b><span>{line.meter2_code || line.meter2_name || 'غير مرتبط'}</span><small>فتح: {line.opening_meter2 ?? '—'} · الإغلاق: {line.closing_meter2 ?? '—'}</small>{detailsSession.status === 'open' && line.meter2_id && <input type="number" min={line.opening_meter2 ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:2`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:2`]: event.target.value }))} />}</div></div><footer>الافتتاح: {line.opening_tank_qty ?? '—'} لتر · التوريد: {line.delivered_qty ?? '—'} لتر · البيع: {line.sold_qty ?? '—'} لتر · المتوقع: {line.expected_closing_qty ?? '—'} لتر · الفعلي: {line.actual_closing_qty ?? '—'} لتر · الفرق: {line.variance_qty ?? '—'} لتر</footer></article>)}</div>
+              <section className="session-operations-modal"><h4>تفاصيل عمليات الجلسة</h4>{detailOperations.length ? <div className="table-wrap"><table><thead><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>الكمية</th><th>القيمة</th><th>الحساب</th></tr></thead><tbody>{detailOperations.map((operation: any) => <tr key={`${operation.type}-${operation.id}`}><td>{operation.occurred_at ? new Date(operation.occurred_at).toLocaleString('ar-EG') : '—'}</td><td>{operation.type === 'sale' ? 'بيع' : operation.type === 'delivery' ? 'توريد' : 'خدمة'}</td><td>{operation.detail || '—'}</td><td>{operation.quantity ? `${Number(operation.quantity).toLocaleString('ar-EG')} لتر` : '—'}</td><td>{Number(operation.value || 0).toLocaleString('ar-EG')} ج.م</td><td>{operation.account || '—'}</td></tr>)}</tbody></table></div> : <p>لا توجد عمليات مسجلة لهذه الجلسة.</p>}</section>
+              {detailsSession.status === 'open' && <><button className="ui-button mt-4" disabled={savingDetailReadings} onClick={saveDetailReadings}>{savingDetailReadings ? 'جارٍ حفظ القراءات...' : 'حفظ قراءات العدادات'}</button><button className="ui-button secondary mt-4 mr-2" onClick={() => { window.location.href = `/reconciliation/session?sessionId=${detailsSession.id}`; }}>فتح شاشة الإغلاق الكاملة</button></>}
+            </>}
+          </section>
+        </div>
+      )}
+    </PageLayout>
+  );
 }

@@ -62,7 +62,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const expenseTotal = (expenseResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.amount ?? 0), 0);
     const serviceTotal = paymentNumber(services.total);
     const serviceCount = Number(services.count ?? 0);
+    const revenue = paymentNumber(current.total_revenue);
     const collected = paymentNumber(current.total_collected) + serviceTotal;
+    const remaining = paymentNumber(current.total_remaining);
     const cost = paymentNumber(current.total_delivered_cost);
     const sold = paymentNumber(current.sold_quantity);
     const delivered = paymentNumber(current.delivered_quantity);
@@ -85,6 +87,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sale_count: Number(current.sale_count ?? 0),
         service_count: serviceCount,
         total_collected: collected,
+        total_revenue: revenue + serviceTotal,
+        total_remaining: remaining,
         total_cost: cost,
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
@@ -92,6 +96,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
       totals: {
         total_collected: collected,
+        total_revenue: revenue + serviceTotal,
+        total_remaining: remaining,
         total_cost: cost,
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
@@ -117,7 +123,9 @@ async function loadCurrentSessionFallback(supabase: any, stationId: string) {
     supabase.from('profiles').select('full_name').eq('id', session.opened_by).maybeSingle(),
   ]);
   const saleRows = sales || []; const deliveryRows = deliveries || [];
-  return { session: { ...session, opened_by_name: profile?.full_name || null }, sales: saleRows, deliveries: deliveryRows, by_fuel: [], total_collected: saleRows.reduce((sum: number, row: any) => sum + Number(row.gross_amount || Number(row.unit_price || 0) * Number(row.quantity || 0)), 0), total_delivered_cost: deliveryRows.reduce((sum: number, row: any) => sum + Number(row.unit_cost || 0) * Number(row.quantity || 0), 0), sold_quantity: saleRows.reduce((sum: number, row: any) => sum + Number(row.quantity || 0), 0), delivered_quantity: deliveryRows.reduce((sum: number, row: any) => sum + Number(row.quantity || 0), 0), sale_count: saleRows.length, delivery_count: deliveryRows.length };
+  const revenue = saleRows.reduce((sum: number, row: any) => sum + Number(row.gross_amount || Number(row.unit_price || 0) * Number(row.quantity || 0)), 0);
+  const collected = saleRows.reduce((sum: number, row: any) => sum + Number(row.paid_amount || 0), 0);
+  return { session: { ...session, opened_by_name: profile?.full_name || null }, sales: saleRows, deliveries: deliveryRows, by_fuel: [], total_revenue: revenue, total_collected: collected, total_remaining: Math.max(revenue - collected, 0), total_delivered_cost: deliveryRows.reduce((sum: number, row: any) => sum + Number(row.unit_cost || 0) * Number(row.quantity || 0), 0), sold_quantity: saleRows.reduce((sum: number, row: any) => sum + Number(row.quantity || 0), 0), delivered_quantity: deliveryRows.reduce((sum: number, row: any) => sum + Number(row.quantity || 0), 0), sale_count: saleRows.length, delivery_count: deliveryRows.length };
 }
 
 function paymentNumber(value: unknown) {

@@ -1,20 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import PageLayout from '../../src/components/PageLayout';
 import { useRequireAuth } from '../../src/lib/auth';
+import { useCurrentStationId } from '../../src/lib/station';
+import supabase from '../../src/lib/supabaseClient';
 
 export default function AdjustmentsList() {
-  useRequireAuth();
+  const { user } = useRequireAuth();
+  const stationId = useCurrentStationId(user?.id ?? null);
   const [rows, setRows] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/adjustments/list')
-      .then((r) => r.json())
-      .then((d) => setRows(d.adjustments || []))
+    if (!stationId) return;
+    supabase.auth.getSession().then(({ data }: { data: { session: { access_token?: string } | null } }) => fetch(`/api/adjustments/list?stationId=${encodeURIComponent(stationId)}`, { headers: data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {} }))
+      .then((response: Response) => response.json())
+      .then((data: { adjustments?: any[] }) => setRows(data.adjustments || []))
       .catch(() => {});
-  }, []);
+  }, [stationId]);
 
   async function review(id: string, approve: boolean) {
-    const res = await fetch('/api/adjustments/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, approved: approve }) });
+    const { data: auth } = await supabase.auth.getSession();
+    const res = await fetch('/api/adjustments/review', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}) }, body: JSON.stringify({ id, approved: approve }) });
     const b = await res.json();
     if (!res.ok) alert(b.error || 'فشل'); else {
       alert('تمت العملية');
