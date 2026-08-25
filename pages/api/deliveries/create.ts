@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
 import { OpenShiftRequiredError, resolveOpenShiftSession } from '../../../src/lib/shiftSession';
 import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
+import { multiplyMoney, parseNumericInput } from '../../../src/core/numbers';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -21,13 +22,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'station_id and business_date are required.' });
     }
     const actor = await requireStationOperator(req, payload.station_id);
-    const quantity = Number(payload.quantity);
-    const unitCost = Number(payload.unit_cost || 0);
-    const paidAmount = Number(payload.paid_amount || 0);
+    const quantity = parseNumericInput(payload.quantity) ?? NaN;
+    const unitCost = parseNumericInput(payload.unit_cost || 0) ?? NaN;
+    const paidAmount = parseNumericInput(payload.paid_amount || 0) ?? NaN;
     if (!payload.supplier_id || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0 || !Number.isFinite(paidAmount) || paidAmount < 0) {
       return res.status(400).json({ error: 'أكمل المورد والكمية والسعر والمدفوع بقيم صحيحة.' });
     }
-    const totalCost = Math.round(quantity * unitCost * 100) / 100;
+    const totalCost = multiplyMoney(quantity, unitCost);
     if (paidAmount > totalCost) return res.status(400).json({ error: 'المدفوع لا يمكن أن يتجاوز إجمالي التوريد.' });
     const { data: supplier } = await supabase.from('suppliers').select('id').eq('id', payload.supplier_id).eq('station_id', payload.station_id).eq('is_active', true).maybeSingle();
     if (!supplier) return res.status(400).json({ error: 'المورد غير موجود في هذه المحطة.' });

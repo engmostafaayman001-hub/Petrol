@@ -6,14 +6,15 @@ import { Button, PageHeader, SectionCard, StatCard, StatusBadge } from '../../sr
 import { useRequireAuth } from '../../src/lib/auth';
 import { useCurrentStationId } from '../../src/lib/station';
 import supabase from '../../src/lib/supabaseClient';
+import { formatMoney as formatMoneyValue, formatQuantity } from '../../src/core/numbers';
 
 type Tank = { tank_id: string; tank_code: string; tank_name: string; fuel_type_id: string; fuel_code: string; fuel_name: string; capacity: number; system_quantity: number; available_quantity: number; fill_pct: number; below_minimum: boolean; min_safe_level: number; status: string; meter_readings_count?: number; last_movement_at?: string | null };
 type Fuel = { id: string; code: string; name: string; selling_price: number; unit?: string; supplier_id?: string | null };
 type Delivery = { id: string; business_date: string; delivered_at?: string; supplier_name?: string; supplier_id?: string; fuel_name?: string; fuel_type_id?: string; tank_code?: string; tank_id?: string; quantity: number; unit_cost?: number; total_cost?: number; paid_amount?: number; reference_no?: string; created_by_name?: string };
 type Movement = { id: string; business_date: string; occurred_at?: string; txn_type: string; fuel_name?: string; tank_code?: string; quantity_delta: number; running_balance?: number; source_id?: string; created_by_name?: string };
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
-const money = (value: number) => `${Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ج.م`;
-const qty = (value: number) => `${Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} لتر`;
+const money = (value: number) => formatMoneyValue(value);
+const qty = (value: number) => formatQuantity(value, 3);
 const movementLabel: Record<string, string> = { sale: 'بيع', delivery: 'توريد', adjustment: 'تسوية', variance_writeoff: 'خصم فرق', reversal: 'إلغاء' };
 
 export default function FuelPage() {

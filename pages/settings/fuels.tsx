@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataS
 import supabase from '../../src/lib/supabaseClient';
 import { useRequireAuth } from '../../src/lib/auth';
 import { useCurrentStationId } from '../../src/lib/station';
+import { parseNumericInput } from '../../src/core/numbers';
 
 type FuelType = {
   id: string;
@@ -87,10 +88,10 @@ export default function FuelSettings() {
       station_id: stationId,
       code: form.code.trim().toUpperCase(),
       name: form.name.trim(),
-      selling_price: Number(form.selling_price) || 0,
-      purchase_price: Number(form.purchase_price) || 0,
+      selling_price: parseNumericInput(form.selling_price) ?? 0,
+      purchase_price: parseNumericInput(form.purchase_price) ?? 0,
       color_hex: form.color_hex.trim() || '#5B9CFF',
-      sort_order: Number(form.sort_order) || 100,
+      sort_order: parseNumericInput(form.sort_order) ?? 100,
       is_active: form.is_active,
       notes: form.notes.trim() || null,
       supplier_id: form.supplier_id || null,

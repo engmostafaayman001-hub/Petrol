@@ -6,10 +6,11 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataS
 import { useRequireAuth } from '../../src/lib/auth';
 import { useCurrentStationId } from '../../src/lib/station';
 import supabase from '../../src/lib/supabaseClient';
+import { formatMoney as formatMoneyValue } from '../../src/core/numbers';
 
 type Service = { id: string; service_type: string; service_name?: string; vehicle_type?: string; amount: number; created_at: string; created_by_name?: string; status?: string; business_date?: string };
 const labels: Record<string, string> = { car_wash: 'غسيل سيارة', oil_change: 'تغيير زيت', carpet_wash: 'غسيل سجاد', blanket_wash: 'غسيل بطانية', other: 'أخرى' };
-const money = (value: unknown) => Number(value || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (value: unknown) => formatMoneyValue(value).replace(/ جنيه$/, '');
 
 export default function ServicesPage() {
   const { user } = useRequireAuth();

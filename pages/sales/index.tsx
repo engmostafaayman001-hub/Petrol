@@ -16,6 +16,7 @@ import {
 import { useRequireAuth } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
+import { formatMoney as formatMoneyValue, formatQuantity } from "../../src/core/numbers";
 import { printDetails } from "../../src/lib/printDetails";
 
 type Sale = {
@@ -50,10 +51,8 @@ type MeterSale = {
   session_status?: string;
 };
 type Session = { business_date?: string; shift_seq?: number; status?: string };
-const money = (value: number) =>
-  `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م`;
-const liters = (value: number) =>
-  `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} لتر`;
+const money = (value: number) => formatMoneyValue(value);
+const liters = (value: number) => formatQuantity(value, 3);
 const shiftName = (seq?: number) =>
   seq === 1 ? "صباحية" : seq === 2 ? "مسائية" : "الوردية الحالية";
 const saleStatus = (status?: string) =>

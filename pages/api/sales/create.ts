@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
 import { OpenShiftRequiredError, resolveOpenShiftSession } from '../../../src/lib/shiftSession';
 import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
+import { multiplyMoney, parseNumericInput } from '../../../src/core/numbers';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -24,9 +25,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'المحطة وتاريخ البيع مطلوبان.' });
     }
     const actor = await requireStationOperator(req, payload.station_id);
-    const quantity = Number(payload.quantity);
-    const unitPrice = Number(payload.unit_price);
-    const paidAmount = Number(payload.paid_amount || 0);
+    const quantity = parseNumericInput(payload.quantity) ?? NaN;
+    const unitPrice = parseNumericInput(payload.unit_price) ?? NaN;
+    const paidAmount = parseNumericInput(payload.paid_amount || 0) ?? NaN;
     const driverName = typeof payload.driver_name === 'string' ? payload.driver_name.trim() : '';
     const vehicleNumber = typeof payload.vehicle_number === 'string' ? payload.vehicle_number.trim() : '';
     if (!payload.tank_id || !fuelTypeId || !payload.customer_id || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(paidAmount) || paidAmount < 0) {
@@ -36,7 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!tank) return res.status(400).json({ error: 'الخزان غير موجود أو غير مرتبط بنوع الوقود المختار.' });
     const { data: customer } = await supabase.from('customers').select('id').eq('id', payload.customer_id).eq('station_id', payload.station_id).eq('is_active', true).maybeSingle();
     if (!customer) return res.status(400).json({ error: 'العميل غير موجود في هذه المحطة.' });
-    const total = Math.round(quantity * unitPrice * 100) / 100;
+    const total = multiplyMoney(quantity, unitPrice);
     if (paidAmount > total) return res.status(400).json({ error: 'المدفوع لا يمكن أن يتجاوز إجمالي عملية البيع.' });
     const openSession = await resolveOpenShiftSession(supabase, payload.station_id, payload.business_date, payload?.shift_id);
 

@@ -15,6 +15,7 @@ import { useToast } from "../../src/components/ToastProvider";
 import { useRequireAuth, useRole } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
+import { formatMoney as formatMoneyValue, parseNumericInput } from "../../src/core/numbers";
 import { printDetails } from "../../src/lib/printDetails";
 
 type Expense = {
@@ -46,8 +47,7 @@ const statusTone = (status: Expense["status"]) =>
     : status === "rejected"
       ? "danger"
       : "warning";
-const money = (value: number) =>
-  `${Number(value || 0).toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م`;
+const money = (value: number) => formatMoneyValue(value);
 const shiftLabel = (name?: string | null, code?: string | null) => {
   const value = (name || code || "").trim();
   const numbered = value.match(/^shift\s*(\d+)$/i);
@@ -112,7 +112,7 @@ export default function ExpensesPage() {
   }, [stationId, load]);
   async function createExpense(event: React.FormEvent) {
     event.preventDefault();
-    const value = Number(amount);
+    const value = parseNumericInput(amount) ?? NaN;
     if (
       !stationId ||
       !sessionId ||

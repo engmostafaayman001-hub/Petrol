@@ -43,7 +43,7 @@ const volumeFormatters = new Map<number, Intl.NumberFormat>();
 function volumeFormatter(decimals: number): Intl.NumberFormat {
   let formatter = volumeFormatters.get(decimals);
   if (!formatter) {
-    formatter = new Intl.NumberFormat('en-GB', {
+    formatter = new Intl.NumberFormat('en-US', {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     });
@@ -83,12 +83,12 @@ export function formatPercent(value: number | null | undefined, decimals = 2): s
 
 export function formatMoney(
   value: number | null | undefined,
-  currency = 'USD',
+  currency = 'EGP',
   decimals = 2,
 ): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—';
   try {
-    return new Intl.NumberFormat('en-GB', {
+    return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency,
       minimumFractionDigits: decimals,

@@ -5,6 +5,7 @@ import { useRequireAuth } from '../../src/lib/auth';
 import FormField from '../../src/components/FormField';
 import { useCurrentStationId } from '../../src/lib/station';
 import supabase from '../../src/lib/supabaseClient';
+import { formatMoney, multiplyMoney, parseNumericInput } from '../../src/core/numbers';
 
 export default function NewDelivery() {
   const { user } = useRequireAuth();
@@ -60,9 +61,9 @@ export default function NewDelivery() {
     setMessage(null);
 
     const stationIdValue = (form.station_id || stationId || '').trim();
-    const quantity = Number(form.quantity);
-    const unitCost = Number(form.unit_cost);
-    const paidAmount = Number(form.paid_amount || 0);
+    const quantity = parseNumericInput(form.quantity) ?? NaN;
+    const unitCost = parseNumericInput(form.unit_cost) ?? NaN;
+    const paidAmount = parseNumericInput(form.paid_amount || 0) ?? NaN;
 
     if (!stationIdValue || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(stationIdValue)) {
       setMessage('معرف المحطة غير صالح');
@@ -128,7 +129,7 @@ export default function NewDelivery() {
         </FormField>
 
         <FormField label="إجمالي التوريد">
-          <input readOnly value={(Number(form.quantity || 0) * Number(form.unit_cost || 0)).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} className="w-full border rounded px-3 py-2 bg-gray-50" />
+          <input readOnly value={formatMoney(multiplyMoney(form.quantity || 0, form.unit_cost || 0))} className="w-full border rounded px-3 py-2 bg-gray-50" />
         </FormField>
 
         <FormField label="المدفوع">

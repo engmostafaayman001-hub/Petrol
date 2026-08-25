@@ -6,6 +6,7 @@ import { useToast } from "../../src/components/ToastProvider";
 import { useRequireAuth } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
+import { formatMoney, multiplyMoney, parseNumericInput } from "../../src/core/numbers";
 
 const cairoDate = () =>
   new Intl.DateTimeFormat("en-CA", {
@@ -62,10 +63,10 @@ export default function NewSale() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    const quantity = Number(form.quantity);
-    const unitPrice = Number(selectedTank?.selling_price || 0);
-    const total = quantity * unitPrice;
-    const paid = Number(form.paid_amount || 0);
+    const quantity = parseNumericInput(form.quantity) ?? NaN;
+    const unitPrice = parseNumericInput(selectedTank?.selling_price || 0) ?? NaN;
+    const total = multiplyMoney(quantity, unitPrice);
+    const paid = parseNumericInput(form.paid_amount || 0) ?? NaN;
     const driverName = form.driver_name.trim();
     const vehicleNumber = form.vehicle_number.trim();
     if (
@@ -121,9 +122,9 @@ export default function NewSale() {
       setSaving(false);
     }
   }
-  const unitPrice = Number(selectedTank?.selling_price || 0);
-  const total = Number(form.quantity || 0) * unitPrice;
-  const remaining = Math.max(total - Number(form.paid_amount || 0), 0);
+  const unitPrice = parseNumericInput(selectedTank?.selling_price || 0) ?? 0;
+  const total = multiplyMoney(form.quantity || 0, unitPrice);
+  const remaining = Math.max(total - (parseNumericInput(form.paid_amount || 0) ?? 0), 0);
   return (
     <PageLayout title="تسجيل بيع">
       <PageHeader
@@ -233,7 +234,7 @@ export default function NewSale() {
             </div>
             <div className="form-field">
               <label>سعر الوحدة</label>
-              <input readOnly value={unitPrice.toLocaleString("ar-EG")} />
+              <input readOnly value={formatMoney(unitPrice)} />
             </div>
             <div className="form-field">
               <label htmlFor="sale-paid">المدفوع</label>
@@ -250,11 +251,11 @@ export default function NewSale() {
             </div>
             <div className="form-field">
               <label>إجمالي العملية</label>
-              <input readOnly value={total.toLocaleString("ar-EG")} />
+              <input readOnly value={formatMoney(total)} />
             </div>
             <div className="form-field">
               <label>المتبقي</label>
-              <input readOnly value={remaining.toLocaleString("ar-EG")} />
+              <input readOnly value={formatMoney(remaining)} />
             </div>
             <div className="form-field">
               <label>اسم السائق</label>

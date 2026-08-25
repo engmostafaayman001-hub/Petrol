@@ -7,9 +7,10 @@ import { Button, PageHeader, SectionCard, StatusBadge } from '../../../src/compo
 import { useRequireAuth } from '../../../src/lib/auth';
 import { useCurrentStationId } from '../../../src/lib/station';
 import supabase from '../../../src/lib/supabaseClient';
+import { formatMoney as formatMoneyValue, formatQuantity } from '../../../src/core/numbers';
 
-const qty = (value: number) => `${Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} لتر`;
-const money = (value: number) => `${Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ج.م`;
+const qty = (value: number) => formatQuantity(value, 3);
+const money = (value: number) => formatMoneyValue(value);
 const movementLabel: Record<string, string> = { sale: 'بيع', delivery: 'توريد', adjustment: 'تسوية', variance_writeoff: 'خصم فرق', reversal: 'إلغاء' };
 export default function TankDetails() {
   const router = useRouter(); const { user } = useRequireAuth(); const stationId = useCurrentStationId(user?.id ?? null); const tankId = typeof router.query.id === 'string' ? router.query.id : '';

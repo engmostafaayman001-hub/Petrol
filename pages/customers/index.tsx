@@ -9,6 +9,7 @@ import {
 import { useRequireAuth } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
+import { formatMoney as formatMoneyValue, parseNumericInput } from "../../src/core/numbers";
 import { printDetails } from "../../src/lib/printDetails";
 
 type Customer = {
@@ -27,8 +28,7 @@ type Transaction = {
   business_date: string;
   notes?: string | null;
 };
-const money = (value: number) =>
-  `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م`;
+const money = (value: number) => formatMoneyValue(value);
 export default function CustomersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
@@ -98,7 +98,8 @@ export default function CustomersPage() {
     }
   }
   async function collect() {
-    if (!selected || !Number(paymentAmount) || Number(paymentAmount) <= 0)
+    const amount = parseNumericInput(paymentAmount);
+    if (!selected || amount === null || amount <= 0)
       return;
     const response = await fetch("/api/accounts/payments", {
       method: "POST",
@@ -110,7 +111,7 @@ export default function CustomersPage() {
         station_id: stationId,
         account_type: "customer",
         customer_id: selected.id,
-        amount: Number(paymentAmount),
+        amount,
         business_date: paymentDate,
         payment_method: paymentMethod,
         notes: paymentNotes,

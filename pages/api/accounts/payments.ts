@@ -2,11 +2,12 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
 import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
 import { resolveOpenShiftSession } from '../../../src/lib/shiftSession';
+import { parseNumericInput } from '../../../src/core/numbers';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
   const { station_id, account_type, customer_id, supplier_id, amount, business_date, payment_method, notes } = req.body || {};
-  const value = Number(amount);
+  const value = parseNumericInput(amount) ?? NaN;
   if (!station_id || !['customer', 'supplier'].includes(account_type) || (!customer_id && !supplier_id) || (customer_id && supplier_id) || !Number.isFinite(value) || value <= 0) return res.status(400).json({ error: 'أكمل الحساب والمبلغ الصحيح.' });
   try {
     const actor = await requireStationOperator(req, station_id);

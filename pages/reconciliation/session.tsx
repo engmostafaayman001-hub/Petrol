@@ -9,11 +9,11 @@ import {
 import { useRequireAuth } from "../../src/lib/auth";
 import supabase from "../../src/lib/supabaseClient";
 import { shiftLabel } from "../../src/lib/displayLabels";
+import { formatMoney as formatMoneyValue, formatQuantity } from "../../src/core/numbers";
 
 const messageFrom = (data: any, fallback: string) =>
   data?.error || data?.message || data?.hint || fallback;
-const money = (value: number) =>
-  `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م`;
+const money = (value: number) => formatMoneyValue(value);
 export default function SessionPage() {
   const router = useRouter();
   useRequireAuth();
@@ -166,7 +166,7 @@ export default function SessionPage() {
           </div>
         </section>
         <section className="recon-stats mb-5">
-          <article><small>إجمالي فرق العدادات</small><b>{Number((lines || []).reduce((total: number, line: any) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_sold_qty || 0), 0), 0)).toLocaleString("ar-EG")} لتر</b><em>مجموع فروق العدادات</em></article>
+              <article><small>إجمالي فرق العدادات</small><b>{formatQuantity((lines || []).reduce((total: number, line: any) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_sold_qty || 0), 0), 0))}</b><em>مجموع فروق العدادات</em></article>
           <article><small>قيمة فرق العدادات</small><b>{money((lines || []).reduce((total: number, line: any) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_value || 0), 0), 0))}</b><em>حسب سعر الجلسة المحفوظ</em></article>
         </section>
         <section className="recon-stats mb-5">

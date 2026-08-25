@@ -9,6 +9,7 @@ import {
 import { useRequireAuth } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
+import { formatMoney as formatMoneyValue, parseNumericInput } from "../../src/core/numbers";
 import { printDetails } from "../../src/lib/printDetails";
 
 type Supplier = {
@@ -26,8 +27,7 @@ type Transaction = {
   credit: number;
   business_date: string;
 };
-const money = (value: number) =>
-  `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م`;
+const money = (value: number) => formatMoneyValue(value);
 export default function SuppliersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
@@ -96,7 +96,8 @@ export default function SuppliersPage() {
     }
   }
   async function pay() {
-    if (!selected || !Number(paymentAmount) || Number(paymentAmount) <= 0)
+    const amount = parseNumericInput(paymentAmount);
+    if (!selected || amount === null || amount <= 0)
       return;
     const response = await fetch("/api/accounts/payments", {
       method: "POST",
@@ -108,7 +109,7 @@ export default function SuppliersPage() {
         station_id: stationId,
         account_type: "supplier",
         supplier_id: selected.id,
-        amount: Number(paymentAmount),
+        amount,
         payment_method: "نقدي",
       }),
     });

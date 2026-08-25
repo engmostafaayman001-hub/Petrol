@@ -5,6 +5,7 @@ import { useRequireAuth, useRole } from '../../src/lib/auth';
 import { useCurrentStationId } from '../../src/lib/station';
 import supabase from '../../src/lib/supabaseClient';
 import { serviceTypeLabel, shiftLabel } from '../../src/lib/displayLabels';
+import { formatMoney as formatMoneyValue, formatQuantity } from '../../src/core/numbers';
 
 type Row = { fuel_type_id?: string; fuel_code?: string; fuel_name?: string; delivered?: number; sold?: number; meter_sold?: number; variance?: number; variance_expense?: number; adjusted?: number; movement_count?: number; revenue?: number; registered_revenue?: number; meter_revenue?: number; procurement_cost?: number; cost?: number; profit?: number; average_sale_price?: number; average_purchase_price?: number; net_change?: number };
 type Service = { id: string; service_type?: string; service_name?: string; vehicle_type?: string; amount?: number; business_date?: string; created_at?: string };
@@ -18,8 +19,8 @@ const today = () => {
     .formatToParts(new Date()).reduce((result, part) => ({ ...result, [part.type]: part.value }), {} as Record<string, string>);
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
-const money = (value: number) => `${Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ج.م`;
-const litres = (value: number) => `${Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} لتر`;
+const money = (value: number) => formatMoneyValue(value);
+const litres = (value: number) => formatQuantity(value, 3);
 
 export default function DailyReport() {
   const { user } = useRequireAuth(); const stationId = useCurrentStationId(user?.id ?? null);
