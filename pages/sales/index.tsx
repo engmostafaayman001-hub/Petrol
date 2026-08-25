@@ -14,6 +14,7 @@ import {
   StatusBadge,
 } from "../../src/components/ui";
 import { useRequireAuth } from "../../src/lib/auth";
+import { useRole } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 import { formatMoney as formatMoneyValue, formatPrice, formatQuantity } from "../../src/core/numbers";
@@ -60,6 +61,8 @@ const saleStatus = (status?: string) =>
 export default function SalesList() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
+  const { role } = useRole();
+  const isManager = role === "manager";
   const [rows, setRows] = useState<Sale[]>([]);
   const [meterSales, setMeterSales] = useState<MeterSale[]>([]);
   const [session, setSession] = useState<Session | null>(null);
@@ -68,6 +71,20 @@ export default function SalesList() {
   const [fuel, setFuel] = useState("");
   const [selected, setSelected] = useState<Sale | null>(null);
   const [tab, setTab] = useState<"all" | "fuel" | "variance">("all");
+  async function manageSale(row: Sale, method: "PATCH" | "DELETE") {
+    const reason = window.prompt(method === "DELETE" ? "سبب حذف/إلغاء المبيعة:" : "سبب تعديل المبيعة:", "تصحيح إداري");
+    if (!reason) return;
+    let payload: Record<string, unknown> | undefined;
+    if (method === "PATCH") {
+      const quantity = window.prompt("الكمية الجديدة:", String(row.quantity || ""));
+      const unitPrice = window.prompt("السعر الجديد:", String(row.unit_price || ""));
+      if (!quantity || !unitPrice) return;
+      payload = { quantity: Number(quantity), unit_price: Number(unitPrice), customer_id: (row as any).customer_id, sales_channel: (row as any).sales_channel || "regular" };
+    }
+    const response = await fetch(`/api/sales/manage?id=${encodeURIComponent(row.id)}`, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}` }, body: JSON.stringify({ reason, payload }) });
+    const data = await response.json();
+    if (!response.ok) window.alert(data.error || "تعذر تنفيذ العملية."); else await load();
+  }
   const load = useCallback(async () => {
     if (!stationId) return;
     setState("loading");
@@ -276,6 +293,7 @@ export default function SalesList() {
                         <th>المتبقي</th>
                         <th>الحالة</th>
                         <th>التفاصيل</th>
+                        {isManager && <th>إجراءات</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -326,6 +344,7 @@ export default function SalesList() {
                               عرض
                             </button>
                           </td>
+                          {isManager && <td><button className="ui-button secondary" onClick={(event) => { event.stopPropagation(); manageSale(row, "PATCH"); }}>تعديل</button> <button className="ui-button danger" onClick={(event) => { event.stopPropagation(); manageSale(row, "DELETE"); }}>إلغاء</button></td>}
                         </tr>
                       ))}
                     </tbody>

@@ -6,7 +6,7 @@ import {
   SectionCard,
   StatusBadge,
 } from "../../src/components/ui";
-import { useRequireAuth } from "../../src/lib/auth";
+import { useRequireAuth, useRole } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 import { formatMoney as formatMoneyValue, parseNumericInput } from "../../src/core/numbers";
@@ -32,6 +32,8 @@ const money = (value: number) => formatMoneyValue(value);
 export default function CustomersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
+  const { role } = useRole();
+  const isManager = role === "manager";
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selected, setSelected] = useState<Customer | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -44,6 +46,7 @@ export default function CustomersPage() {
   const [paymentMethod, setPaymentMethod] = useState("نقدي");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -70,18 +73,32 @@ export default function CustomersPage() {
   async function save(event: React.FormEvent) {
     event.preventDefault();
     const response = await fetch("/api/customers", {
-      method: "POST",
+      method: editing ? "PATCH" : "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${await token()}`,
       },
-      body: JSON.stringify({ station_id: stationId, ...form }),
+      body: JSON.stringify({ station_id: stationId, id: editing?.id, ...form }),
     });
     const data = await response.json();
     if (!response.ok) return setMessage(data.error);
-    setMessage("تم حفظ العميل.");
+    setMessage(editing ? "تم تعديل العميل." : "تم حفظ العميل.");
+    setEditing(null);
     setForm({ name: "", phone: "", email: "", address: "", notes: "" });
     setFormOpen(false);
+    load();
+  }
+  function edit(customer: Customer) {
+    setEditing(customer);
+    setForm({ name: customer.name, phone: customer.phone || "", email: customer.email || "", address: customer.address || "", notes: "" });
+    setFormOpen(true);
+  }
+  async function remove(customer: Customer) {
+    if (!window.confirm("هل أنت متأكد من حذف هذا العميل نهائيًا؟ لا يمكن حذفه إذا كان مرتبطًا بمبيعات أو تحصيلات.")) return;
+    const response = await fetch("/api/customers", { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ station_id: stationId, id: customer.id }) });
+    const data = await response.json();
+    if (!response.ok) return setMessage(data.error || "تعذر تعطيل العميل.");
+    setMessage("تم حذف العميل نهائيًا.");
     load();
   }
   async function view(customer: Customer) {
@@ -148,12 +165,15 @@ export default function CustomersPage() {
                 <StatusBadge tone="info">حساب</StatusBadge>
               </header>
               <strong>الحساب المالي الموحد</strong>
+              <div className="flex gap-2 flex-wrap">
               <button
                 className="ui-button secondary"
                 onClick={() => view(customer)}
               >
                 عرض التفاصيل
               </button>
+              {isManager && <><button className="ui-button secondary" onClick={() => edit(customer)}>تعديل</button><button className="ui-button danger" onClick={() => remove(customer)}>حذف</button></>}
+              </div>
             </article>
           ))}
         </div>
@@ -163,7 +183,7 @@ export default function CustomersPage() {
               className="ui-card form-card modal-card form-grid"
               onSubmit={save}
             >
-              <h3>إضافة عميل</h3>
+              <h3>{editing ? "تعديل العميل" : "إضافة عميل"}</h3>
               {(["name", "phone", "email", "address", "notes"] as const).map(
                 (field) => (
                   <div className="form-field" key={field}>

@@ -46,6 +46,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (error) return res.status(error.code === '23505' ? 409 : 400).json({ error: error.code === '23505' ? 'هذا العميل موجود بالفعل.' : error.message });
       return res.status(201).json({ customer: data });
     }
+    if (req.method === 'PATCH' || req.method === 'DELETE') {
+      await requireStationManager(req, stationId);
+      const customerId = String(req.body?.id || req.query.customerId || '').trim();
+      if (!customerId) return res.status(400).json({ error: 'معرف العميل مطلوب.' });
+      const update = {
+        name: typeof req.body?.name === 'string' ? req.body.name.trim() : undefined,
+        phone: typeof req.body?.phone === 'string' ? req.body.phone.trim() || null : null,
+        email: typeof req.body?.email === 'string' ? req.body.email.trim() || null : null,
+        address: typeof req.body?.address === 'string' ? req.body.address.trim() || null : null,
+        notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() || null : null,
+      };
+      if (req.method === 'PATCH' && (!update.name || update.name.length < 2)) return res.status(400).json({ error: 'اسم العميل مطلوب.' });
+      if (req.method === 'DELETE') {
+        const { error } = await db.from('customers').delete().eq('id', customerId).eq('station_id', stationId);
+        if (error) return res.status(409).json({ error: 'لا يمكن حذف العميل نهائيًا لأنه مرتبط بمبيعات أو تحصيلات تاريخية.' });
+        return res.status(200).json({ deleted: true });
+      }
+      const { data, error } = await db.from('customers').update(update).eq('id', customerId).eq('station_id', stationId).select('id,name,phone,email,address,notes,is_active,created_at').single();
+      if (error) return res.status(400).json({ error: error.message });
+      return res.status(200).json({ customer: data });
+    }
     return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
   } catch (error: any) {
     const message = error.message || 'تعذر تنفيذ العملية.';

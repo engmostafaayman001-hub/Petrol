@@ -6,7 +6,7 @@ import {
   ErrorState,
   LoadingState,
 } from "../../src/components/DataState";
-import { useRequireAuth } from "../../src/lib/auth";
+import { useRequireAuth, useRole } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 import { printDetails } from "../../src/lib/printDetails";
@@ -23,11 +23,27 @@ type Delivery = {
 export default function DeliveriesList() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
+  const { role } = useRole();
+  const isManager = role === "manager";
   const [rows, setRows] = useState<any[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [query, setQuery] = useState("");
   const [supplier, setSupplier] = useState("");
   const [selected, setSelected] = useState<any>(null);
+  async function manageDelivery(row: any, method: "PATCH" | "DELETE") {
+    const reason = window.prompt(method === "DELETE" ? "سبب حذف/إلغاء التوريد:" : "سبب تعديل التوريد:", "تصحيح إداري");
+    if (!reason) return;
+    let payload: Record<string, unknown> | undefined;
+    if (method === "PATCH") {
+      const quantity = window.prompt("الكمية الجديدة:", String(row.quantity || ""));
+      const unitCost = window.prompt("سعر الوحدة الجديد:", String(row.unit_cost || ""));
+      if (!quantity || !unitCost) return;
+      payload = { quantity: Number(quantity), unit_cost: Number(unitCost), supplier_id: row.supplier_id, tank_id: row.tank_id, fuel_type_id: row.fuel_type_id, reference_no: row.reference_no, notes: row.notes };
+    }
+    const response = await fetch(`/api/deliveries/manage?id=${encodeURIComponent(row.id)}`, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}` }, body: JSON.stringify({ reason, payload }) });
+    const data = await response.json();
+    if (!response.ok) window.alert(data.error || "تعذر تنفيذ العملية."); else await load();
+  }
   const load = useCallback(async () => {
     if (!stationId) return;
     setState("loading");
@@ -142,6 +158,7 @@ export default function DeliveriesList() {
                   <th>المدفوع</th>
                   <th>المتبقي</th>
                   <th>التفاصيل</th>
+                  {isManager && <th>إجراءات</th>}
                 </tr>
               </thead>
               <tbody>
@@ -155,6 +172,7 @@ export default function DeliveriesList() {
                       <td>
                         <b>{row.supplier_name || "غير مرتبط"}</b>
                       </td>
+                      {isManager && <td><button className="ui-button secondary" onClick={() => manageDelivery(row, "PATCH")}>تعديل</button> <button className="ui-button danger" onClick={() => manageDelivery(row, "DELETE")}>إلغاء</button></td>}
                       <td>{row.fuel_name || "—"}</td>
                       <td>{row.tank_code || "—"}</td>
                       <td>

@@ -28,6 +28,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (error) return res.status(error.code === '23505' ? 409 : 400).json({ error: error.code === '23505' ? 'كود المورد مستخدم بالفعل.' : error.message });
       return res.status(201).json({ supplier: data });
     }
+    if (req.method === 'PATCH' || req.method === 'DELETE') {
+      await requireStationManager(req, stationId);
+      const supplierId = String(req.body?.id || req.query.supplierId || '').trim();
+      if (!supplierId) return res.status(400).json({ error: 'معرف المورد مطلوب.' });
+      const update = {
+        name: typeof req.body?.name === 'string' ? req.body.name.trim() : undefined,
+        code: typeof req.body?.code === 'string' ? req.body.code.trim().toUpperCase() : undefined,
+        contact_name: typeof req.body?.contact_name === 'string' ? req.body.contact_name.trim() || null : null,
+        contact_phone: typeof req.body?.contact_phone === 'string' ? req.body.contact_phone.trim() || null : null,
+        notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() || null : null,
+      };
+      if (req.method === 'PATCH' && (!update.name || update.name.length < 2 || !update.code || update.code.length < 2)) return res.status(400).json({ error: 'اسم المورد وكوده مطلوبان.' });
+      if (req.method === 'DELETE') {
+        const { error } = await db.from('suppliers').delete().eq('id', supplierId).eq('station_id', stationId);
+        if (error) return res.status(409).json({ error: 'لا يمكن حذف المورد نهائيًا لأنه مرتبط بتوريدات أو مدفوعات تاريخية.' });
+        return res.status(200).json({ deleted: true });
+      }
+      const { data, error } = await db.from('suppliers').update(update).eq('id', supplierId).eq('station_id', stationId).select('id,code,name,contact_name,contact_phone,notes,is_active').single();
+      if (error) return res.status(400).json({ error: error.message });
+      return res.status(200).json({ supplier: data });
+    }
     return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
   } catch (error: any) {
     const message = error.message || 'تعذر تنفيذ العملية.';

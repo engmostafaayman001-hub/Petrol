@@ -6,7 +6,7 @@ import {
   SectionCard,
   StatusBadge,
 } from "../../src/components/ui";
-import { useRequireAuth } from "../../src/lib/auth";
+import { useRequireAuth, useRole } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 import { formatMoney as formatMoneyValue, parseNumericInput } from "../../src/core/numbers";
@@ -31,12 +31,15 @@ const money = (value: number) => formatMoneyValue(value);
 export default function SuppliersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
+  const { role } = useRole();
+  const isManager = role === "manager";
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selected, setSelected] = useState<Supplier | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [balance, setBalance] = useState(0);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Supplier | null>(null);
   const [form, setForm] = useState({
     name: "",
     code: "",
@@ -63,16 +66,17 @@ export default function SuppliersPage() {
   async function save(event: React.FormEvent) {
     event.preventDefault();
     const response = await fetch("/api/suppliers", {
-      method: "POST",
+      method: editing ? "PATCH" : "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${await token()}`,
       },
-      body: JSON.stringify({ station_id: stationId, ...form }),
+      body: JSON.stringify({ station_id: stationId, id: editing?.id, ...form }),
     });
     const data = await response.json();
     if (!response.ok) return setMessage(data.error);
-    setMessage("تم حفظ المورد.");
+    setMessage(editing ? "تم تعديل المورد." : "تم حفظ المورد.");
+    setEditing(null);
     setForm({
       name: "",
       code: "",
@@ -81,6 +85,19 @@ export default function SuppliersPage() {
       notes: "",
     });
     setFormOpen(false);
+    load();
+  }
+  function edit(supplier: Supplier) {
+    setEditing(supplier);
+    setForm({ name: supplier.name, code: supplier.code, contact_name: supplier.contact_name || "", contact_phone: supplier.contact_phone || "", notes: supplier.notes || "" });
+    setFormOpen(true);
+  }
+  async function remove(supplier: Supplier) {
+    if (!window.confirm("هل أنت متأكد من حذف هذا المورد نهائيًا؟ لا يمكن حذفه إذا كان مرتبطًا بتوريدات أو مدفوعات.")) return;
+    const response = await fetch("/api/suppliers", { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ station_id: stationId, id: supplier.id }) });
+    const data = await response.json();
+    if (!response.ok) return setMessage(data.error || "تعذر تعطيل المورد.");
+    setMessage("تم حذف المورد نهائيًا.");
     load();
   }
   async function view(supplier: Supplier) {
@@ -143,12 +160,15 @@ export default function SuppliersPage() {
                 <StatusBadge tone="info">مورد</StatusBadge>
               </header>
               <strong>حساب المورد</strong>
+              <div className="flex gap-2 flex-wrap">
               <button
                 className="ui-button secondary"
                 onClick={() => view(supplier)}
               >
                 عرض التفاصيل
               </button>
+              {isManager && <><button className="ui-button secondary" onClick={() => edit(supplier)}>تعديل</button><button className="ui-button danger" onClick={() => remove(supplier)}>حذف</button></>}
+              </div>
             </article>
           ))}
         </div>
@@ -158,7 +178,7 @@ export default function SuppliersPage() {
               className="ui-card form-card modal-card form-grid"
               onSubmit={save}
             >
-              <h3>إضافة مورد</h3>
+              <h3>{editing ? "تعديل المورد" : "إضافة مورد"}</h3>
               <div className="form-field">
                 <label>اسم المورد</label>
                 <input

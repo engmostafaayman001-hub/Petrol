@@ -7,6 +7,7 @@ import {
   parseNumericInput,
 } from "../src/core/numbers";
 import { getSessionSalesSummary } from "../src/core/sessionSales";
+import { can } from "../src/core/permissions";
 
 describe("numeric formatting and parsing", () => {
   it("accepts Arabic digits, decimal commas, and thousands separators", () => {
@@ -99,6 +100,13 @@ describe("numeric formatting and parsing", () => {
     );
     expect(summary.totalSalesQuantity).toBe(1250.5);
     expect(summary.totalSalesAmount).toBe(25947.88);
+  });
+
+  it("allows record management only for the existing manager role", () => {
+    expect(can("manager", "record:void")).toBe(true);
+    expect(can("supervisor", "record:void")).toBe(false);
+    expect(can("manager", "customer:manage")).toBe(true);
+    expect(can("supervisor", "customer:manage")).toBe(true);
   });
 
   it("formats money and large values consistently", () => {
