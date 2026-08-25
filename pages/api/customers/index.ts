@@ -19,6 +19,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (entriesError) throw entriesError;
       const { data: sales, error: salesError } = await db.from('sales').select('id,business_date,gross_amount,paid_amount,created_at,created_by').eq('station_id', stationId).eq('customer_id', customerId).eq('status', 'active').order('business_date', { ascending: true }).order('created_at', { ascending: true });
       if (salesError) throw salesError;
+      const { data: internalTransactions, error: internalError } = await db.from('customer_internal_transactions').select('id,description,quantity,unit,unit_price,subtotal,discount,total,paid_amount,remaining,business_date,notes,created_by,created_at').eq('station_id', stationId).eq('customer_id', customerId).order('business_date', { ascending: true }).order('created_at', { ascending: true });
+      if (internalError) throw internalError;
       const postedSaleIds = new Set((entries || []).filter((entry: any) => entry.transaction_type === 'sale' && entry.reference_id).map((entry: any) => entry.reference_id));
       const missingSaleEntries = (sales || []).filter((sale: any) => !postedSaleIds.has(sale.id) && Number(sale.gross_amount || 0) - Number(sale.paid_amount || 0) > 0).map((sale: any) => ({
         id: `sale-${sale.id}`,
@@ -36,7 +38,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const totalPaidFromSales = (sales || []).reduce((total: number, sale: any) => total + Number(sale.paid_amount || 0), 0);
       const totalCollected = (entries || []).filter((entry: any) => entry.transaction_type === 'customer_payment').reduce((total: number, entry: any) => total + Number(entry.credit || 0), 0);
       const totalDue = Math.max(totalSales - totalPaidFromSales - totalCollected, 0);
-      return res.status(200).json({ customer, transactions: allEntries, balance: totalDue, summary: { operations: sales?.length || 0, total_sales: totalSales, total_paid: totalPaidFromSales + totalCollected, total_due: totalDue } });
+      const internalTotal = (internalTransactions || []).reduce((total: number, item: any) => total + Number(item.total || 0), 0);
+      const internalPaid = (internalTransactions || []).reduce((total: number, item: any) => total + Number(item.paid_amount || 0), 0);
+      const internalDue = (internalTransactions || []).reduce((total: number, item: any) => total + Number(item.remaining || 0), 0);
+      return res.status(200).json({ customer, transactions: allEntries, internalTransactions: internalTransactions || [], balance: totalDue + internalDue, summary: { operations: sales?.length || 0, total_sales: totalSales, total_paid: totalPaidFromSales + totalCollected, total_due: totalDue, internal_operations: internalTransactions?.length || 0, internal_total: internalTotal, internal_paid: internalPaid, internal_due: internalDue } });
     }
     if (req.method === 'POST') {
       await requireStationManager(req, stationId);

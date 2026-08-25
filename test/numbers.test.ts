@@ -8,6 +8,7 @@ import {
 } from "../src/core/numbers";
 import { getSessionSalesSummary } from "../src/core/sessionSales";
 import { can } from "../src/core/permissions";
+import { calculateCustomerInternalTransaction } from "../src/core/customerInternal";
 
 describe("numeric formatting and parsing", () => {
   it("accepts Arabic digits, decimal commas, and thousands separators", () => {
@@ -107,6 +108,14 @@ describe("numeric formatting and parsing", () => {
     expect(can("supervisor", "record:void")).toBe(false);
     expect(can("manager", "customer:manage")).toBe(true);
     expect(can("supervisor", "customer:manage")).toBe(true);
+  });
+
+  it("calculates customer internal transaction totals without fuel inventory logic", () => {
+    expect(calculateCustomerInternalTransaction(10, 100, 50, 500)).toEqual({
+      subtotal: 1000,
+      total: 950,
+      remaining: 450,
+    });
   });
 
   it("formats money and large values consistently", () => {
