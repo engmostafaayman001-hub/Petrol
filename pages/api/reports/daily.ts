@@ -61,6 +61,21 @@ export default async function handler(
       .order("business_date", { ascending: false })
       .order("created_at", { ascending: false });
     if (selectedSession) expenseQuery = expenseQuery.eq("session_id", selectedSession.id);
+    let movementQuery: any = supabase
+      .from("v_daily_fuel_movement")
+      .select("*")
+      .eq("station_id", stationId)
+      .gte("business_date", from)
+      .lte("business_date", to)
+      .order("fuel_code");
+    let meterLinesQuery: any = supabase
+      .from("v_reconciliation_lines_current")
+      .select("id,business_date,fuel_type_id,fuel_code,fuel_name,tank_code,shift_code,shift_name,meter_sold_qty,sold_qty,variance_qty,session_status,meter_readings_count")
+      .eq("station_id", stationId)
+      .gte("business_date", from)
+      .lte("business_date", to)
+      .not("meter_sold_qty", "is", null);
+    if (selectedSession) meterLinesQuery = meterLinesQuery.eq("session_id", selectedSession.id);
     const [
       movementResult,
       salesResult,
@@ -70,14 +85,9 @@ export default async function handler(
       meterLinesResult,
       fuelPricesResult,
       expensesResult,
+      accountTransactionsResult,
     ] = await Promise.all([
-      supabase
-        .from("v_daily_fuel_movement")
-        .select("*")
-        .eq("station_id", stationId)
-        .gte("business_date", from)
-        .lte("business_date", to)
-        .order("fuel_code"),
+      movementQuery,
       salesQuery,
       deliveryQuery,
       serviceQuery,
@@ -91,21 +101,24 @@ export default async function handler(
         .lte("business_date", to)
         .order("business_date", { ascending: false })
         .order("shift_seq", { ascending: false }),
-      supabase
-        .from("v_reconciliation_lines_current")
-        .select(
-          "id,business_date,fuel_type_id,fuel_code,fuel_name,tank_code,shift_code,shift_name,meter_sold_qty,sold_qty,variance_qty,session_status,meter_readings_count",
-        )
-        .eq("station_id", stationId)
-        .gte("business_date", from)
-        .lte("business_date", to)
-        .not("meter_sold_qty", "is", null),
+      meterLinesQuery,
       supabase
         .from("fuel_types")
         .select("id,selling_price,purchase_price")
         .eq("station_id", stationId)
         .eq("is_active", true),
       expenseQuery,
+      (() => {
+        let query: any = supabase
+          .from("account_transactions")
+          .select("id,account_type,customer_id,supplier_id,transaction_type,amount,business_date,created_at,created_by,payment_method,notes")
+          .eq("station_id", stationId)
+          .gte("business_date", from)
+          .lte("business_date", to)
+          .order("created_at", { ascending: false });
+        if (selectedSession) query = query.eq("session_id", selectedSession.id);
+        return query;
+      })(),
     ]);
     if (
       movementResult.error ||
@@ -115,7 +128,8 @@ export default async function handler(
       sessionsResult.error ||
       meterLinesResult.error ||
       fuelPricesResult.error ||
-      expensesResult.error
+      expensesResult.error ||
+      (accountTransactionsResult.error && !/column .*session_id.*does not exist/i.test(accountTransactionsResult.error.message))
     )
       return res
         .status(500)
@@ -128,7 +142,8 @@ export default async function handler(
             sessionsResult.error?.message ||
             meterLinesResult.error?.message ||
             fuelPricesResult.error?.message ||
-            expensesResult.error?.message,
+            expensesResult.error?.message ||
+            accountTransactionsResult.error?.message,
         });
     const groups = new Map<string, any>();
     for (const row of movementResult.data || []) {
@@ -277,6 +292,12 @@ export default async function handler(
       0,
     );
     const expenses = expensesResult.data || [];
+    const accountTransactions = accountTransactionsResult.data || [];
+    const reportSessionIds = (sessionsResult.data || []).map((session: any) => session.id);
+    const meterReadingsResult = reportSessionIds.length
+      ? await supabase.from("reconciliation_meter_readings").select("id,session_id,reconciliation_line_id,meter_id,reading_number,opening_reading,closing_reading,meter_sold_qty,unit_price,meter_value").in("session_id", reportSessionIds).order("created_at", { ascending: false })
+      : { data: [], error: null };
+    if (meterReadingsResult.error && !/does not exist/i.test(meterReadingsResult.error.message)) return res.status(500).json({ error: meterReadingsResult.error.message });
     const expenseTotal = expenses.reduce(
       (total: number, expense: any) => total + Number(expense.amount || 0),
       0,
@@ -292,6 +313,8 @@ export default async function handler(
       profit: fuelTotals.profit + serviceTotal - expenseTotal,
       service_total: serviceTotal,
       service_count: services.length,
+      customer_payment_total: accountTransactions.filter((entry: any) => entry.transaction_type === "customer_payment").reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0),
+      supplier_payment_total: accountTransactions.filter((entry: any) => entry.transaction_type === "supplier_payment").reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0),
     };
     return res
       .status(200)
@@ -302,6 +325,8 @@ export default async function handler(
         expenses,
         sessions: sessionsResult.data || [],
         meterSales,
+        accountTransactions,
+        meterReadings: meterReadingsResult.data || [],
       });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

@@ -44,7 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const current = (data && typeof data === 'object') ? data as any : {};
     const services = (servicesData && typeof servicesData === 'object') ? servicesData as any : {};
-    const [tankResult, expenseResult, meterResult] = await Promise.all([
+    const [tankResult, expenseResult, meterResult, paymentResult] = await Promise.all([
       supabase
         .from('v_tank_status')
         .select('system_quantity,available_quantity,capacity')
@@ -56,9 +56,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       current.session?.id
         ? Promise.all([
             supabase.from('reconciliation_lines').select('id,tank_id,meter_readings_count').eq('session_id', current.session.id),
-            supabase.from('reconciliation_meter_readings').select('reconciliation_line_id,meter_sold_qty').eq('session_id', current.session.id),
+            supabase.from('reconciliation_meter_readings').select('reconciliation_line_id,meter_sold_qty,meter_value').eq('session_id', current.session.id),
           ])
         : Promise.resolve([{ data: [], error: null }, { data: [], error: null }]),
+      current.session?.id
+        ? supabase.from('account_transactions').select('transaction_type,amount').eq('station_id', stationId).eq('session_id', current.session.id)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     const tankTotal = (tankResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.system_quantity ?? 0), 0);
@@ -67,11 +70,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (expenseResult.error) return res.status(500).json({ error: expenseResult.error.message });
     const meterReadings = (meterResult as any)[1]?.data || [];
     const meterSold = meterReadings.reduce((sum: number, row: any) => sum + Number(row.meter_sold_qty || 0), 0);
+    const meterValue = meterReadings.reduce((sum: number, row: any) => sum + Number(row.meter_value || 0), 0);
+    const accountPayments = (paymentResult as any).data || [];
+    const customerPayments = accountPayments.filter((row: any) => row.transaction_type === 'customer_payment').reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+    const supplierPayments = accountPayments.filter((row: any) => row.transaction_type === 'supplier_payment').reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
     const expenseTotal = (expenseResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.amount ?? 0), 0);
     const serviceTotal = paymentNumber(services.total);
     const serviceCount = Number(services.count ?? 0);
     const revenue = paymentNumber(current.total_revenue);
-    const collected = paymentNumber(current.total_collected) + serviceTotal;
+    const collected = paymentNumber(current.total_collected) + customerPayments + serviceTotal;
     const remaining = paymentNumber(current.total_remaining);
     const cost = paymentNumber(current.total_delivered_cost);
     const sold = paymentNumber(current.sold_quantity);
@@ -98,20 +105,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total_revenue: revenue + serviceTotal,
         total_remaining: remaining,
         total_cost: cost,
+        customer_payments: customerPayments,
+        supplier_payments: supplierPayments,
+        cash_in: paymentNumber(current.total_collected) + customerPayments,
+        cash_out: supplierPayments,
+        net_cash: paymentNumber(current.total_collected) + customerPayments - supplierPayments,
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
         total_expenses: expenseTotal,
         meter_sold: meterSold,
+        meter_value: meterValue,
       },
       totals: {
         total_collected: collected,
         total_revenue: revenue + serviceTotal,
         total_remaining: remaining,
         total_cost: cost,
+        customer_payments: customerPayments,
+        supplier_payments: supplierPayments,
+        cash_in: paymentNumber(current.total_collected) + customerPayments,
+        cash_out: supplierPayments,
+        net_cash: paymentNumber(current.total_collected) + customerPayments - supplierPayments,
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
         total_expenses: expenseTotal,
         meter_sold: meterSold,
+        meter_value: meterValue,
       },
       trend: [],
     };

@@ -166,14 +166,20 @@ export default function SessionPage() {
           </div>
         </section>
         <section className="recon-stats mb-5">
+          <article><small>إجمالي فرق العدادات</small><b>{Number((lines || []).reduce((total: number, line: any) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_sold_qty || 0), 0), 0)).toLocaleString("ar-EG")} لتر</b><em>مجموع فروق العدادات</em></article>
+          <article><small>قيمة فرق العدادات</small><b>{money((lines || []).reduce((total: number, line: any) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_value || 0), 0), 0))}</b><em>حسب سعر الجلسة المحفوظ</em></article>
+        </section>
+        <section className="recon-stats mb-5">
           <article><small>المبيعات المحصلة</small><b>{money(session.total_collected)}</b></article>
           <article><small>المتبقي</small><b>{money(session.total_remaining)}</b></article>
           <article><small>عدد المبيعات</small><b>{session.sale_count || 0}</b><em>{Number(session.sold_quantity || 0).toLocaleString("ar-EG")} لتر</em></article>
           <article><small>التوريدات</small><b>{Number(session.delivery_total || 0).toLocaleString("ar-EG")} ج.م</b><em>{session.delivery_count || 0} عملية · {Number(session.delivered_quantity || 0).toLocaleString("ar-EG")} لتر</em></article>
+          <article><small>تحصيلات العملاء</small><b>{money(session.customer_payment_total)}</b><em>تحصيلات مرتبطة بالجلسة</em></article>
+          <article><small>مدفوعات الموردين</small><b>{money(session.supplier_payment_total)}</b><em>دفعات مرتبطة بالجلسة</em></article>
         </section>
         <section className="ui-card p-5 mb-5">
           <header className="section-card-header"><div><h3>عمليات الجلسة</h3><p>كل عملية مسجلة أثناء الجلسة، مرتبة من الأحدث.</p></div><span className="status-badge">{(session.operations || []).length} عملية</span></header>
-          {(session.operations || []).length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>الكمية</th><th>القيمة</th><th>الحساب</th><th>الحالة</th></tr></thead><tbody>{session.operations.map((operation: any) => <tr key={`${operation.type}-${operation.id}`}><td>{operation.occurred_at ? new Date(operation.occurred_at).toLocaleString("ar-EG") : "—"}</td><td>{operation.type === "sale" ? "بيع" : operation.type === "delivery" ? "توريد" : "خدمة"}</td><td>{operation.detail || "—"}</td><td>{operation.quantity ? `${Number(operation.quantity).toLocaleString("ar-EG")} لتر` : "—"}</td><td>{money(operation.value)}</td><td>{operation.account || "—"}</td><td><span className="status-badge status-success">نشطة</span></td></tr>)}</tbody></table></div> : <EmptyState title="لا توجد عمليات بعد" description="ستظهر المبيعات والتوريدات والخدمات هنا." />}
+          {(session.operations || []).length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>الكمية</th><th>القيمة</th><th>الحساب</th><th>الحالة</th></tr></thead><tbody>{session.operations.map((operation: any) => <tr key={`${operation.type}-${operation.id}`}><td>{operation.occurred_at ? new Date(operation.occurred_at).toLocaleString("ar-EG") : "—"}</td><td>{operation.type === "sale" ? "بيع" : operation.type === "delivery" ? "توريد" : operation.type === "customer_payment" ? "تحصيل عميل" : operation.type === "supplier_payment" ? "دفع مورد" : "خدمة"}</td><td>{operation.detail || "—"}</td><td>{operation.quantity ? `${Number(operation.quantity).toLocaleString("ar-EG")} لتر` : "—"}</td><td>{money(operation.value)}</td><td>{operation.account || "—"}</td><td><span className="status-badge status-success">نشطة</span></td></tr>)}</tbody></table></div> : <EmptyState title="لا توجد عمليات بعد" description="ستظهر المبيعات والتوريدات والخدمات والتحصيلات هنا." />}
         </section>
         <div className="space-y-3">
           {lines.map((line) => (
@@ -287,7 +293,7 @@ function MeterLine({
         {readings.map((reading: any, index: number) => (
           <label key={reading.meter_id}>
             قراءة العداد {reading.reading_number || index + 1}
-            <small>{reading.meter_code || reading.meter_name || "عداد"} · البداية: {Number(reading.opening_reading || 0).toLocaleString("ar-EG")}</small>
+            <small>{reading.meter_code || reading.meter_name || "عداد"} · البداية: {Number(reading.opening_reading || 0).toLocaleString("ar-EG")} · النهاية: {closingValues[reading.meter_id] || "—"} · الفرق: {Math.max(Number(closingValues[reading.meter_id] || reading.closing_reading || 0) - Number(reading.opening_reading || 0), 0).toLocaleString("ar-EG")} لتر · القيمة: {money(Math.max(Number(closingValues[reading.meter_id] || reading.closing_reading || 0) - Number(reading.opening_reading || 0), 0) * Number(reading.unit_price || 0))}</small>
             <input disabled={disabled || saving} type="number" min="0" step="0.001" value={closingValues[reading.meter_id] || ""} onChange={(event) => setClosingValues((current) => ({ ...current, [reading.meter_id]: event.target.value }))} placeholder="قراءة النهاية" />
           </label>
         ))}

@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
 import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
+import { resolveOpenShiftSession } from '../../../src/lib/shiftSession';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
@@ -28,7 +29,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       balance = Math.max(totalSales - totalPaidFromSales - totalCollected, 0);
     }
     if (value > balance) return res.status(409).json({ error: 'المبلغ أكبر من الرصيد المستحق.' });
-    const { data, error } = await db.from('account_transactions').insert({ station_id, account_type, customer_id: isCustomer ? customer_id : null, supplier_id: isCustomer ? null : supplier_id, transaction_type: isCustomer ? 'customer_payment' : 'supplier_payment', debit: isCustomer ? 0 : value, credit: isCustomer ? value : 0, business_date: business_date || new Date().toISOString().slice(0, 10), payment_method: payment_method || null, notes: notes || null, created_by: actor.id }).select('id').single();
+    const paymentDate = business_date || new Date().toISOString().slice(0, 10);
+    let openSession;
+    try {
+      openSession = await resolveOpenShiftSession(db, station_id, paymentDate);
+    } catch (error: any) {
+      return res.status(409).json({ error: error.message || 'افتح الوردية أولاً لتسجيل التحصيل.' });
+    }
+    const { data, error } = await db.from('account_transactions').insert({ station_id, account_type, customer_id: isCustomer ? customer_id : null, supplier_id: isCustomer ? null : supplier_id, transaction_type: isCustomer ? 'customer_payment' : 'supplier_payment', debit: isCustomer ? 0 : value, credit: isCustomer ? value : 0, business_date: openSession.businessDate, session_id: openSession.sessionId, payment_method: payment_method || null, notes: notes || null, created_by: actor.id }).select('id').single();
     if (error) throw error;
     return res.status(201).json({ payment_id: data.id, balance: balance - value });
   } catch (error: any) { return res.status(400).json({ error: error.message || 'تعذر تسجيل الدفعة.' }); }
