@@ -170,6 +170,12 @@ export default function CustomersPage() {
     setMessage("تم تسجيل التحصيل.");
     view(selected);
   }
+  const selectedSaleTank = tanks.find((tank) => tank.tank_id === saleForm.tank_id);
+  const saleUnitPrice = Number(selectedSaleTank?.selling_price || 0);
+  const saleQuantity = parseNumericInput(saleForm.quantity) || 0;
+  const saleTotal = Math.max(saleQuantity * saleUnitPrice, 0);
+  const salePaid = parseNumericInput(saleForm.paid_amount) || 0;
+  const saleRemaining = Math.max(saleTotal - salePaid, 0);
   return (
     <PageLayout title="العملاء">
       <main className="accounts-page" dir="rtl">
@@ -324,9 +330,12 @@ export default function CustomersPage() {
               <div className="form-field form-field-full"><label>الخزان والوقود</label><select required value={saleForm.tank_id} onChange={(event) => setSaleForm({ ...saleForm, tank_id: event.target.value })}><option value="">اختر الخزان</option>{tanks.map((tank) => <option key={tank.tank_id} value={tank.tank_id}>{tank.tank_code} - {tank.fuel_name}</option>)}</select></div>
               <div className="form-field"><label>التاريخ</label><input required type="date" value={saleForm.business_date} onChange={(event) => setSaleForm({ ...saleForm, business_date: event.target.value })} /></div>
               <div className="form-field"><label>الكمية باللتر</label><input required inputMode="decimal" value={saleForm.quantity} onChange={(event) => setSaleForm({ ...saleForm, quantity: event.target.value })} /></div>
+              <div className="form-field"><label>سعر الوحدة المحفوظ</label><input readOnly value={money(saleUnitPrice)} /></div>
+              <div className="form-field"><label>إجمالي العملية</label><input readOnly value={money(saleTotal)} /></div>
               <div className="form-field"><label>اسم السائق</label><input value={saleForm.driver_name} onChange={(event) => setSaleForm({ ...saleForm, driver_name: event.target.value })} /></div>
               <div className="form-field"><label>رقم السيارة</label><input value={saleForm.vehicle_number} onChange={(event) => setSaleForm({ ...saleForm, vehicle_number: event.target.value })} /></div>
               <div className="form-field"><label>المدفوع</label><input inputMode="decimal" value={saleForm.paid_amount} onChange={(event) => setSaleForm({ ...saleForm, paid_amount: event.target.value })} /></div>
+              <div className="form-field"><label>المتبقي على الحساب</label><input readOnly value={money(saleRemaining)} /></div>
               <div className="form-actions"><Button type="submit">حفظ البيع</Button><Button type="button" variant="secondary" onClick={() => setSaleFormOpen(false)}>إلغاء</Button></div>
             </form>
           </div>
