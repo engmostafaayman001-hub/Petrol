@@ -10,6 +10,7 @@ import { useRequireAuth } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 import { printDetails } from "../../src/lib/printDetails";
+import { formatPrice } from "../../src/core/numbers";
 type Delivery = {
   id: string;
   business_date?: string;
@@ -136,6 +137,7 @@ export default function DeliveriesList() {
                   <th>الوقود</th>
                   <th>الخزان</th>
                   <th>الكمية</th>
+                  <th>سعر الوحدة</th>
                   <th>الإجمالي</th>
                   <th>المدفوع</th>
                   <th>المتبقي</th>
@@ -158,6 +160,7 @@ export default function DeliveriesList() {
                       <td>
                         {Number(row.quantity || 0).toLocaleString("ar-EG")} لتر
                       </td>
+                      <td>{formatPrice(row.unit_cost || 0, false)}</td>
                       <td>{total.toLocaleString("ar-EG")} ج.م</td>
                       <td>{paid.toLocaleString("ar-EG")} ج.م</td>
                       <td>
@@ -222,7 +225,7 @@ export default function DeliveriesList() {
               <div>
                 <dt>السعر</dt>
                 <dd>
-                  {Number(selected.unit_cost || 0).toLocaleString("ar-EG")} ج.م
+                  {formatPrice(selected.unit_cost || 0)}
                 </dd>
               </div>
               <div>

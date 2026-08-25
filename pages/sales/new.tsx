@@ -6,7 +6,7 @@ import { useToast } from "../../src/components/ToastProvider";
 import { useRequireAuth } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
-import { formatMoney, multiplyMoney, parseNumericInput } from "../../src/core/numbers";
+import { formatMoney, formatPrice, multiplyMoney, parseNumericInput } from "../../src/core/numbers";
 
 const cairoDate = () =>
   new Intl.DateTimeFormat("en-CA", {
@@ -223,7 +223,7 @@ export default function NewSale() {
                 min="0.001"
                 step="0.001"
                 inputMode="decimal"
-                type="number"
+                type="text"
                 autoFocus
                 value={form.quantity}
                 onChange={(event) =>
@@ -234,7 +234,7 @@ export default function NewSale() {
             </div>
             <div className="form-field">
               <label>سعر الوحدة</label>
-              <input readOnly value={formatMoney(unitPrice)} />
+              <input readOnly value={formatPrice(unitPrice)} />
             </div>
             <div className="form-field">
               <label htmlFor="sale-paid">المدفوع</label>
@@ -242,7 +242,7 @@ export default function NewSale() {
                 id="sale-paid"
                 min="0"
                 step="0.01"
-                type="number"
+                type="text"
                 value={form.paid_amount}
                 onChange={(event) =>
                   setForm({ ...form, paid_amount: event.target.value })

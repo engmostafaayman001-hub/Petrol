@@ -125,7 +125,7 @@ export default function NewDelivery() {
         </FormField>
 
         <FormField label="سعر الوحدة">
-          <input required min="0" step="0.01" type="number" value={form.unit_cost} onChange={(e) => update('unit_cost', e.target.value)} className="w-full border rounded px-3 py-2" />
+          <input required min="0" type="text" inputMode="decimal" placeholder="مثال: 20.62.86" value={form.unit_cost} onChange={(e) => update('unit_cost', e.target.value)} className="w-full border rounded px-3 py-2" />
         </FormField>
 
         <FormField label="إجمالي التوريد">
@@ -133,7 +133,7 @@ export default function NewDelivery() {
         </FormField>
 
         <FormField label="المدفوع">
-          <input min="0" step="0.01" type="number" value={form.paid_amount} onChange={(e) => update('paid_amount', e.target.value)} className="w-full border rounded px-3 py-2" />
+          <input min="0" type="text" inputMode="decimal" value={form.paid_amount} onChange={(e) => update('paid_amount', e.target.value)} className="w-full border rounded px-3 py-2" />
         </FormField>
 
         <FormField label="رقم الفاتورة / التوريد">

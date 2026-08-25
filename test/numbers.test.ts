@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatMoney,
+  formatPrice,
   formatNumber,
   multiplyMoney,
   parseNumericInput,
@@ -12,6 +13,13 @@ describe("numeric formatting and parsing", () => {
     expect(parseNumericInput("1,000.50")).toBe(1000.5);
     expect(parseNumericInput("١٬٢٥٠٫٧٥")).toBe(1250.75);
     expect(parseNumericInput("1,000")).toBe(1000);
+    expect(parseNumericInput("20.62.86")).toBe(20.6286);
+  });
+
+  it("formats unit prices as pounds, piastres, and milliemes", () => {
+    expect(formatPrice("20.62.86")).toBe("20.62.86 جنيه");
+    expect(formatPrice("20.62.86", false)).toBe("20.62.86");
+    expect(formatPrice(20.75)).toBe("20.75.00 جنيه");
   });
 
   it("formats money and large values consistently", () => {

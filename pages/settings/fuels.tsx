@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/DataS
 import supabase from '../../src/lib/supabaseClient';
 import { useRequireAuth } from '../../src/lib/auth';
 import { useCurrentStationId } from '../../src/lib/station';
-import { parseNumericInput } from '../../src/core/numbers';
+import { formatPrice, parseNumericInput } from '../../src/core/numbers';
 
 type FuelType = {
   id: string;
@@ -139,8 +139,8 @@ export default function FuelSettings() {
     setForm({
       code: fuel.code,
       name: fuel.name,
-      selling_price: String(fuel.selling_price ?? ''),
-      purchase_price: String(fuel.purchase_price ?? ''),
+      selling_price: formatPrice(fuel.selling_price ?? ''),
+      purchase_price: formatPrice(fuel.purchase_price ?? ''),
       color_hex: fuel.color_hex || '#5B9CFF',
       sort_order: String(fuel.sort_order ?? 100),
       is_active: fuel.is_active,
@@ -193,8 +193,8 @@ export default function FuelSettings() {
 
         <FormField label="سعر البيع (لتر)">
           <input
-            type="number"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
             value={form.selling_price}
             onChange={(e) => setForm((current) => ({ ...current, selling_price: e.target.value }))}
             className="w-full border rounded px-3 py-2"
@@ -203,8 +203,8 @@ export default function FuelSettings() {
 
         <FormField label="سعر الشراء (لتر)">
           <input
-            type="number"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
             value={form.purchase_price}
             onChange={(e) => setForm((current) => ({ ...current, purchase_price: e.target.value }))}
             className="w-full border rounded px-3 py-2"
@@ -308,8 +308,8 @@ export default function FuelSettings() {
                     <tr key={fuel.id} className="border border-[var(--border)] bg-[var(--surface)]">
                       <td className="px-4 py-3 align-top">{fuel.code}</td>
                       <td className="px-4 py-3">{fuel.name}</td>
-                      <td className="px-4 py-3">{fuel.selling_price?.toLocaleString('ar-EG')}</td>
-                      <td className="px-4 py-3">{fuel.purchase_price?.toLocaleString('ar-EG')}</td>
+                      <td className="px-4 py-3">{formatPrice(fuel.selling_price, false)}</td>
+                      <td className="px-4 py-3">{formatPrice(fuel.purchase_price, false)}</td>
                       <td className="px-4 py-3">{suppliers.find((supplier) => supplier.id === fuel.supplier_id)?.name || 'بدون مورد'}</td>
                       <td className="px-4 py-3">{fuel.is_active ? 'نعم' : 'لا'}</td>
                       <td className="px-4 py-3 space-x-2 whitespace-nowrap">

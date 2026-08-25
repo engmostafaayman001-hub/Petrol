@@ -16,7 +16,7 @@ import {
 import { useRequireAuth } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
-import { formatMoney as formatMoneyValue, formatQuantity } from "../../src/core/numbers";
+import { formatMoney as formatMoneyValue, formatPrice, formatQuantity } from "../../src/core/numbers";
 import { printDetails } from "../../src/lib/printDetails";
 
 type Sale = {
@@ -300,7 +300,7 @@ export default function SalesList() {
                           <td>{row.customer_name || "عميل نقدي"}</td>
                           <td>{[row.driver_name, row.vehicle_number].filter(Boolean).join(" / ") || "—"}</td>
                           <td>{liters(row.quantity || 0)}</td>
-                          <td>{money(row.unit_price || 0)}</td>
+                          <td>{formatPrice(row.unit_price || 0, false)}</td>
                           <td>
                             <b>{money(row.gross_amount || 0)}</b>
                           </td>
@@ -405,7 +405,7 @@ export default function SalesList() {
               </div>
               <div>
                 <dt>سعر الوحدة</dt>
-                <dd>{money(selected.unit_price || 0)}</dd>
+                <dd>{formatPrice(selected.unit_price || 0)}</dd>
               </div>
               <div>
                 <dt>الإجمالي</dt>
