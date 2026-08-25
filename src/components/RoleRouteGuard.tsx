@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../lib/auth';
 import { can } from '../core/permissions';
 
-const supervisorRoutes = new Set(['/', '/sales', '/sales/new', '/deliveries', '/deliveries/new', '/services', '/services/new', '/reconciliation', '/reconciliation/session', '/expenses', '/customers', '/suppliers', '/reports/daily', '/ledger']);
+const supervisorRoutes = new Set(['/', '/deliveries', '/deliveries/new', '/services', '/services/new', '/reconciliation', '/reconciliation/session', '/expenses', '/customers', '/suppliers', '/reports/daily', '/ledger']);
 const supervisorRouteCapabilities: Array<{ prefix: string; capability: Parameters<typeof can>[1] }> = [
   { prefix: '/services', capability: 'sale:create' },
   { prefix: '/reports/daily', capability: 'report:export' },

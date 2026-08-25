@@ -243,14 +243,13 @@ export default function Dashboard() {
     { title: 'قيمة مبيعات العداد', value: safeSnapshot.today?.meter_value ?? 0, unit: 'ج.م', icon: 'sales', hint: 'ليست قيمة إضافية فوق المبيعات' },
     { title: 'تحصيلات العملاء', value: safeSnapshot.today?.customer_payments ?? 0, unit: 'ج.م', icon: 'sales', hint: 'تحصيلات الجلسة الحالية' },
     { title: 'مدفوعات الموردين', value: safeSnapshot.today?.supplier_payments ?? 0, unit: 'ج.م', icon: 'operations', hint: 'دفعات الجلسة الحالية' },
-    { title: 'صافي حركة النقد', value: safeSnapshot.today?.net_cash ?? 0, unit: 'ج.م', icon: 'sales', hint: 'النقد الداخل ناقص الخارج' },
+    { title: 'صافي حركة النقد', value: safeSnapshot.today?.net_cash ?? 0, unit: 'ج.م', icon: 'sales', hint: 'التحصيلات ناقص مدفوعات الموردين' },
   ];
 
   const actions: { href: string; icon: IconName; label: string }[] = [
     { href: '/reconciliation', icon: 'adjust', label: 'تسوية وردية' },
     { href: '/tanks', icon: 'transfer', label: 'تحويل مخزون' },
     { href: '/deliveries/new', icon: 'plus', label: 'إضافة فاتورة شراء' },
-    { href: '/sales/new', icon: 'sales', label: 'إضافة بيع' },
     { href: '/reports/daily', icon: 'report', label: 'عرض التقارير' },
   ];
 

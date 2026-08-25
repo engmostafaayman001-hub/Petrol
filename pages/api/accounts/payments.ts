@@ -28,9 +28,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const totalPaidFromSales = (sales || []).reduce((total: number, sale: any) => total + Number(sale.paid_amount || 0), 0);
       const totalCollected = (entries || []).filter((entry: any) => entry.transaction_type === 'customer_payment').reduce((total: number, entry: any) => total + Number(entry.credit || 0), 0);
       balance = Math.max(totalSales - totalPaidFromSales - totalCollected, 0);
-      const { data: internalTransactions, error: internalError } = await db.from('customer_internal_transactions').select('remaining').eq('station_id', station_id).eq('customer_id', accountId);
-      if (internalError) throw internalError;
-      balance += (internalTransactions || []).reduce((total: number, item: any) => total + Number(item.remaining || 0), 0);
     }
     if (value > balance) return res.status(409).json({ error: 'المبلغ أكبر من الرصيد المستحق.' });
     const paymentDate = business_date || new Date().toISOString().slice(0, 10);
