@@ -295,7 +295,7 @@ export default async function handler(
     const accountTransactions = accountTransactionsResult.data || [];
     const reportSessionIds = (sessionsResult.data || []).map((session: any) => session.id);
     const meterReadingsResult = reportSessionIds.length
-      ? await supabase.from("reconciliation_meter_readings").select("id,session_id,reconciliation_line_id,meter_id,reading_number,opening_reading,closing_reading,meter_sold_qty,unit_price,meter_value").in("session_id", reportSessionIds).order("created_at", { ascending: false })
+      ? await supabase.from("reconciliation_meter_readings").select("id,session_id,reconciliation_line_id,meter_id,reading_number,opening_reading,closing_reading,meter_sold_qty,unit_price,meter_value").in("session_id", reportSessionIds).order("recorded_at", { ascending: false })
       : { data: [], error: null };
     if (meterReadingsResult.error && !/does not exist/i.test(meterReadingsResult.error.message)) return res.status(500).json({ error: meterReadingsResult.error.message });
     const expenseTotal = expenses.reduce(
