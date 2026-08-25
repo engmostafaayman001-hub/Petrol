@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const db = getServiceSupabase();
     if (req.method === 'GET') {
       const customerId = String(req.query.customerId || '').trim();
-      const { data, error } = await db.from('customers').select('id,name,phone,email,address,driver_name,vehicle_number,notes,is_active,created_at').eq('station_id', stationId).eq('is_active', true).order('name');
+      const { data, error } = await db.from('customers').select('id,name,phone,email,address,notes,is_active,created_at').eq('station_id', stationId).eq('is_active', true).order('name');
       if (error) throw error;
       if (!customerId) return res.status(200).json({ customers: data || [] });
       const customer = (data || []).find((item) => item.id === customerId);
@@ -40,9 +40,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     if (req.method === 'POST') {
       await requireStationManager(req, stationId);
-      const { name, phone, email, address, driver_name, vehicle_number, notes } = req.body || {};
+      const { name, phone, email, address, notes } = req.body || {};
       if (typeof name !== 'string' || name.trim().length < 2) return res.status(400).json({ error: 'اسم العميل مطلوب.' });
-      const { data, error } = await db.from('customers').insert({ station_id: stationId, name: name.trim(), phone: typeof phone === 'string' ? phone.trim() : null, email: typeof email === 'string' ? email.trim() : null, address: typeof address === 'string' ? address.trim() : null, driver_name: typeof driver_name === 'string' ? driver_name.trim() || null : null, vehicle_number: typeof vehicle_number === 'string' ? vehicle_number.trim() || null : null, notes: typeof notes === 'string' ? notes.trim() : null, created_by: actor.id }).select('id,name,phone,email,address,driver_name,vehicle_number,notes,is_active,created_at').single();
+      const { data, error } = await db.from('customers').insert({ station_id: stationId, name: name.trim(), phone: typeof phone === 'string' ? phone.trim() : null, email: typeof email === 'string' ? email.trim() : null, address: typeof address === 'string' ? address.trim() : null, notes: typeof notes === 'string' ? notes.trim() : null, created_by: actor.id }).select('id,name,phone,email,address,notes,is_active,created_at').single();
       if (error) return res.status(error.code === '23505' ? 409 : 400).json({ error: error.code === '23505' ? 'هذا العميل موجود بالفعل.' : error.message });
       return res.status(201).json({ customer: data });
     }
@@ -55,8 +55,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         phone: typeof req.body?.phone === 'string' ? req.body.phone.trim() || null : null,
         email: typeof req.body?.email === 'string' ? req.body.email.trim() || null : null,
         address: typeof req.body?.address === 'string' ? req.body.address.trim() || null : null,
-        driver_name: typeof req.body?.driver_name === 'string' ? req.body.driver_name.trim() || null : null,
-        vehicle_number: typeof req.body?.vehicle_number === 'string' ? req.body.vehicle_number.trim() || null : null,
         notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() || null : null,
       };
       if (req.method === 'PATCH' && (!update.name || update.name.length < 2)) return res.status(400).json({ error: 'اسم العميل مطلوب.' });
@@ -65,7 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (error) return res.status(409).json({ error: 'لا يمكن حذف العميل نهائيًا لأنه مرتبط بمبيعات أو تحصيلات تاريخية.' });
         return res.status(200).json({ deleted: true });
       }
-      const { data, error } = await db.from('customers').update(update).eq('id', customerId).eq('station_id', stationId).select('id,name,phone,email,address,driver_name,vehicle_number,notes,is_active,created_at').single();
+      const { data, error } = await db.from('customers').update(update).eq('id', customerId).eq('station_id', stationId).select('id,name,phone,email,address,notes,is_active,created_at').single();
       if (error) return res.status(400).json({ error: error.message });
       return res.status(200).json({ customer: data });
     }

@@ -18,8 +18,6 @@ type Customer = {
   phone?: string | null;
   email?: string | null;
   address?: string | null;
-  driver_name?: string | null;
-  vehicle_number?: string | null;
 };
 type Transaction = {
   id: string;
@@ -54,11 +52,12 @@ export default function CustomersPage() {
     phone: "",
     email: "",
     address: "",
-    driver_name: "",
-    vehicle_number: "",
     notes: "",
   });
   const [message, setMessage] = useState("");
+  const [tanks, setTanks] = useState<any[]>([]);
+  const [saleFormOpen, setSaleFormOpen] = useState(false);
+  const [saleForm, setSaleForm] = useState({ tank_id: "", quantity: "", paid_amount: "", business_date: new Date().toISOString().slice(0, 10), driver_name: "", vehicle_number: "" });
   async function token() {
     return (await supabase.auth.getSession()).data.session?.access_token || "";
   }
@@ -74,6 +73,16 @@ export default function CustomersPage() {
   useEffect(() => {
     load();
   }, [stationId]);
+  useEffect(() => {
+    if (!stationId) return;
+    const currentStationId = stationId;
+    async function loadTanks() {
+      const response = await fetch(`/api/tanks?stationId=${encodeURIComponent(currentStationId)}`, { headers: { Authorization: `Bearer ${await token()}` } });
+      const data = await response.json();
+      if (response.ok) setTanks(data.tanks || []);
+    }
+    loadTanks().catch(() => setTanks([]));
+  }, [stationId]);
   async function save(event: React.FormEvent) {
     event.preventDefault();
     const response = await fetch("/api/customers", {
@@ -88,13 +97,13 @@ export default function CustomersPage() {
     if (!response.ok) return setMessage(data.error);
     setMessage(editing ? "تم تعديل العميل." : "تم حفظ العميل.");
     setEditing(null);
-    setForm({ name: "", phone: "", email: "", address: "", driver_name: "", vehicle_number: "", notes: "" });
+    setForm({ name: "", phone: "", email: "", address: "", notes: "" });
     setFormOpen(false);
     load();
   }
   function edit(customer: Customer) {
     setEditing(customer);
-    setForm({ name: customer.name, phone: customer.phone || "", email: customer.email || "", address: customer.address || "", driver_name: customer.driver_name || "", vehicle_number: customer.vehicle_number || "", notes: "" });
+    setForm({ name: customer.name, phone: customer.phone || "", email: customer.email || "", address: customer.address || "", notes: "" });
     setFormOpen(true);
   }
   async function remove(customer: Customer) {
@@ -117,6 +126,21 @@ export default function CustomersPage() {
       setBalance(Number(data.balance || 0));
       setSummary(data.summary || { operations: 0, total_sales: 0, total_paid: 0, total_due: Number(data.balance || 0) });
     }
+  }
+  async function saveSale(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selected) return;
+    const tank = tanks.find((item) => item.tank_id === saleForm.tank_id);
+    const quantity = parseNumericInput(saleForm.quantity);
+    const paidAmount = parseNumericInput(saleForm.paid_amount || 0);
+    if (!stationId || !tank || quantity === null || quantity <= 0 || paidAmount === null || paidAmount < 0) return setMessage("أكمل الخزان والكمية والمدفوع بشكل صحيح.");
+    const response = await fetch("/api/sales/create", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ station_id: stationId, tank_id: tank.tank_id, fuel_type_id: tank.fuel_type_id, business_date: saleForm.business_date, quantity, unit_price: Number(tank.selling_price || 0), customer_id: selected.id, paid_amount: paidAmount, driver_name: saleForm.driver_name, vehicle_number: saleForm.vehicle_number, payment_method: "نقدي" }) });
+    const data = await response.json();
+    if (!response.ok) return setMessage(data.error || "تعذر تسجيل عملية البيع.");
+    setSaleFormOpen(false);
+    setSaleForm({ tank_id: "", quantity: "", paid_amount: "", business_date: new Date().toISOString().slice(0, 10), driver_name: "", vehicle_number: "" });
+    setMessage("تم تسجيل عملية البيع.");
+    view(selected);
   }
   async function collect() {
     const amount = parseNumericInput(paymentAmount);
@@ -168,7 +192,7 @@ export default function CustomersPage() {
                 </div>
                 <StatusBadge tone="info">حساب</StatusBadge>
               </header>
-              <strong>{customer.driver_name || "لا يوجد سائق مسجل"} · {customer.vehicle_number || "لا يوجد رقم سيارة"}</strong>
+              <strong>حساب العميل وعمليات البيع</strong>
               <div className="flex gap-2 flex-wrap">
               <button
                 className="ui-button secondary"
@@ -188,7 +212,7 @@ export default function CustomersPage() {
               onSubmit={save}
             >
               <h3>{editing ? "تعديل العميل" : "إضافة عميل"}</h3>
-              {(["name", "phone", "email", "address", "driver_name", "vehicle_number", "notes"] as const).map(
+              {(["name", "phone", "email", "address", "notes"] as const).map(
                 (field) => (
                   <div className="form-field" key={field}>
                     <label>
@@ -200,11 +224,7 @@ export default function CustomersPage() {
                             ? "البريد الإلكتروني"
                             : field === "address"
                               ? "العنوان"
-                              : field === "driver_name"
-                                ? "اسم السائق"
-                                : field === "vehicle_number"
-                                  ? "رقم السيارة"
-                                  : "ملاحظات"}
+                              : "ملاحظات"}
                     </label>
                     {field === "notes" ? (
                       <textarea
@@ -256,6 +276,7 @@ export default function CustomersPage() {
                   <p>المتبقي للتحصيل: {money(summary.total_due)}</p>
                 </div>
                 <div className="no-print flex gap-2">
+                  <button type="button" className="ui-button secondary" onClick={() => setSaleFormOpen(true)}>إضافة عملية بيع</button>
                   <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
                   <button className="modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>
@@ -266,7 +287,6 @@ export default function CustomersPage() {
                 <div><span>إجمالي المدفوع</span><b>{money(summary.total_paid)}</b></div>
                 <div><span>المتبقي للتحصيل</span><b>{money(summary.total_due)}</b></div>
               </div>
-              <div className="account-contact"><span>السائق: {selected.driver_name || "غير مسجل"}</span><span>رقم السيارة: {selected.vehicle_number || "غير مسجل"}</span></div>
               <div className="account-ledger">
                 {transactions.length ? (
                   transactions.map((entry) => (
@@ -295,6 +315,20 @@ export default function CustomersPage() {
                 </div>
               )}
             </section>
+          </div>
+        )}
+        {saleFormOpen && selected && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <form className="ui-card form-card modal-card form-grid" onSubmit={saveSale}>
+              <h3>إضافة عملية بيع إلى {selected.name}</h3>
+              <div className="form-field form-field-full"><label>الخزان والوقود</label><select required value={saleForm.tank_id} onChange={(event) => setSaleForm({ ...saleForm, tank_id: event.target.value })}><option value="">اختر الخزان</option>{tanks.map((tank) => <option key={tank.tank_id} value={tank.tank_id}>{tank.tank_code} - {tank.fuel_name}</option>)}</select></div>
+              <div className="form-field"><label>التاريخ</label><input required type="date" value={saleForm.business_date} onChange={(event) => setSaleForm({ ...saleForm, business_date: event.target.value })} /></div>
+              <div className="form-field"><label>الكمية باللتر</label><input required inputMode="decimal" value={saleForm.quantity} onChange={(event) => setSaleForm({ ...saleForm, quantity: event.target.value })} /></div>
+              <div className="form-field"><label>اسم السائق</label><input value={saleForm.driver_name} onChange={(event) => setSaleForm({ ...saleForm, driver_name: event.target.value })} /></div>
+              <div className="form-field"><label>رقم السيارة</label><input value={saleForm.vehicle_number} onChange={(event) => setSaleForm({ ...saleForm, vehicle_number: event.target.value })} /></div>
+              <div className="form-field"><label>المدفوع</label><input inputMode="decimal" value={saleForm.paid_amount} onChange={(event) => setSaleForm({ ...saleForm, paid_amount: event.target.value })} /></div>
+              <div className="form-actions"><Button type="submit">حفظ البيع</Button><Button type="button" variant="secondary" onClick={() => setSaleFormOpen(false)}>إلغاء</Button></div>
+            </form>
           </div>
         )}
       </main>
