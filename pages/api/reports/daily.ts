@@ -28,7 +28,7 @@ export default async function handler(
     }
     let salesQuery = supabase
       .from("v_sales")
-      .select("fuel_type_id,fuel_name,gross_amount,paid_amount,quantity,unit_price")
+      .select("fuel_type_id,fuel_name,gross_amount,paid_amount,quantity,unit_price,session_id")
       .eq("station_id", stationId)
       .eq("status", "active")
       .gte("business_date", from)
@@ -296,6 +296,8 @@ export default async function handler(
     );
     const expenses = expensesResult.data || [];
     const accountTransactions = accountTransactionsResult.data || [];
+    const customerPaymentTotal = accountTransactions.filter((entry: any) => entry.transaction_type === "customer_payment").reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0);
+    const supplierPaymentTotal = accountTransactions.filter((entry: any) => entry.transaction_type === "supplier_payment").reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0);
     const meterReadingsResult = reportSessionIds.length
       ? await supabase.from("reconciliation_meter_readings").select("id,session_id,reconciliation_line_id,meter_id,reading_number,opening_reading,closing_reading,meter_sold_qty,unit_price,meter_value").in("session_id", reportSessionIds).order("recorded_at", { ascending: false })
       : { data: [], error: null };
@@ -385,8 +387,9 @@ export default async function handler(
       profit: fuelTotals.profit + serviceTotal - expenseTotal,
       service_total: serviceTotal,
       service_count: services.length,
-      customer_payment_total: accountTransactions.filter((entry: any) => entry.transaction_type === "customer_payment").reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0),
-      supplier_payment_total: accountTransactions.filter((entry: any) => entry.transaction_type === "supplier_payment").reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0),
+      customer_payment_total: customerPaymentTotal,
+      supplier_payment_total: supplierPaymentTotal,
+      net_cash: fuelTotals.collected + serviceTotal + customerPaymentTotal - supplierPaymentTotal - expenseTotal,
     };
     return res
       .status(200)

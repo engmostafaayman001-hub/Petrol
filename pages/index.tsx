@@ -243,6 +243,7 @@ export default function Dashboard() {
     { title: 'قيمة مبيعات العداد', value: safeSnapshot.today?.meter_value ?? 0, unit: 'ج.م', icon: 'sales', hint: 'ليست قيمة إضافية فوق المبيعات' },
     { title: 'تحصيلات العملاء', value: safeSnapshot.today?.customer_payments ?? 0, unit: 'ج.م', icon: 'sales', hint: 'تحصيلات الجلسة الحالية' },
     { title: 'مدفوعات الموردين', value: safeSnapshot.today?.supplier_payments ?? 0, unit: 'ج.م', icon: 'operations', hint: 'دفعات الجلسة الحالية' },
+    { title: 'صافي الربح التشغيلي', value: effectiveProfit, unit: 'ج.م', icon: 'sales', hint: 'بعد تكلفة التوريد والمصروفات' },
     { title: 'صافي حركة النقد', value: safeSnapshot.today?.net_cash ?? 0, unit: 'ج.م', icon: 'sales', hint: 'التحصيلات ناقص مدفوعات الموردين' },
   ];
 
