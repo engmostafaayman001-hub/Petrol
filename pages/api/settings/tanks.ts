@@ -7,6 +7,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { id, ...payload } = req.body || {};
     if (!payload.station_id || !payload.code || !payload.name || !payload.fuel_type_id) return res.status(400).json({ error: 'بيانات الخزان الأساسية غير مكتملة.' });
+    const meterReadingsCount = Number(payload.meter_readings_count ?? 1);
+    if (!Number.isInteger(meterReadingsCount) || meterReadingsCount < 1 || meterReadingsCount > 20) return res.status(400).json({ error: 'عدد قراءات العداد يجب أن يكون رقمًا صحيحًا من 1 إلى 20.' });
+    payload.meter_readings_count = meterReadingsCount;
     const actor = await requireStationOperator(req, payload.station_id);
     const supabase = getServiceSupabase();
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', actor.id).eq('station_id', payload.station_id).eq('is_active', true).maybeSingle();

@@ -44,7 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const current = (data && typeof data === 'object') ? data as any : {};
     const services = (servicesData && typeof servicesData === 'object') ? servicesData as any : {};
-    const [tankResult, expenseResult] = await Promise.all([
+    const [tankResult, expenseResult, meterResult] = await Promise.all([
       supabase
         .from('v_tank_status')
         .select('system_quantity,available_quantity,capacity')
@@ -53,12 +53,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       current.session?.id
         ? supabase.from('expenses').select('amount').eq('station_id', stationId).eq('session_id', current.session.id).eq('status', 'approved')
         : Promise.resolve({ data: [], error: null }),
+      current.session?.id
+        ? Promise.all([
+            supabase.from('reconciliation_lines').select('id,tank_id,meter_readings_count').eq('session_id', current.session.id),
+            supabase.from('reconciliation_meter_readings').select('reconciliation_line_id,meter_sold_qty').eq('session_id', current.session.id),
+          ])
+        : Promise.resolve([{ data: [], error: null }, { data: [], error: null }]),
     ]);
 
     const tankTotal = (tankResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.system_quantity ?? 0), 0);
     const tankAvailable = (tankResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.available_quantity ?? 0), 0);
     const tankCapacity = (tankResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.capacity ?? 0), 0);
     if (expenseResult.error) return res.status(500).json({ error: expenseResult.error.message });
+    const meterReadings = (meterResult as any)[1]?.data || [];
+    const meterSold = meterReadings.reduce((sum: number, row: any) => sum + Number(row.meter_sold_qty || 0), 0);
     const expenseTotal = (expenseResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.amount ?? 0), 0);
     const serviceTotal = paymentNumber(services.total);
     const serviceCount = Number(services.count ?? 0);
@@ -93,6 +101,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
         total_expenses: expenseTotal,
+        meter_sold: meterSold,
       },
       totals: {
         total_collected: collected,
@@ -102,6 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
         total_expenses: expenseTotal,
+        meter_sold: meterSold,
       },
       trend: [],
     };

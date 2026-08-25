@@ -94,7 +94,7 @@ export default async function handler(
       supabase
         .from("v_reconciliation_lines_current")
         .select(
-          "id,business_date,fuel_type_id,fuel_code,fuel_name,tank_code,shift_code,shift_name,meter_sold_qty,sold_qty,variance_qty,session_status",
+          "id,business_date,fuel_type_id,fuel_code,fuel_name,tank_code,shift_code,shift_name,meter_sold_qty,sold_qty,variance_qty,session_status,meter_readings_count",
         )
         .eq("station_id", stationId)
         .gte("business_date", from)

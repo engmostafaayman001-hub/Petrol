@@ -13,13 +13,14 @@ const messageFrom = (data: any, fallback: string) =>
   data?.error || data?.message || data?.hint || fallback;
 
 type Shift = { id: string; seq: number; shift_period?: string };
-type Meter = { id: string; code: string; name: string; tank_id: string };
+type Meter = { id: string; code: string; name: string; tank_id: string; meter_slot?: number };
 type Tank = {
   tank_id: string;
   tank_code: string;
   tank_name: string;
   fuel_name: string;
   system_quantity?: number;
+  meter_readings_count?: number;
 };
 type Session = {
   id: string;
@@ -48,6 +49,25 @@ const dateInCairo = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(
     new Date(),
   );
+
+function SessionMeterGrid({
+  line,
+  editable,
+  detailReadings,
+  setDetailReadings,
+}: {
+  line: any;
+  editable: boolean;
+  detailReadings: Record<string, string>;
+  setDetailReadings: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+}) {
+  const readings = line.meter_readings?.length ? line.meter_readings : [
+    line.meter_id && { meter_id: line.meter_id, reading_number: 1, opening_reading: line.opening_meter, closing_reading: line.closing_meter, meter_code: line.meter_code, meter_name: line.meter_name },
+    line.meter2_id && { meter_id: line.meter2_id, reading_number: 2, opening_reading: line.opening_meter2, closing_reading: line.closing_meter2, meter_code: line.meter2_code, meter_name: line.meter2_name },
+  ].filter(Boolean);
+  return <div className="session-meter-grid">{readings.map((reading: any, index: number) => <div key={reading.meter_id}><b>قراءة العداد {reading.reading_number || index + 1}</b><span>{reading.meter_code || reading.meter_name || 'غير مرتبط'}</span><small>فتح: {reading.opening_reading ?? '—'} · الإغلاق: {reading.closing_reading ?? '—'}</small>{editable && <input type="number" min={reading.opening_reading ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:${reading.reading_number || index + 1}`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:${reading.reading_number || index + 1}`]: event.target.value }))} />}</div>)}</div>;
+}
+
 export default function ReconciliationIndex() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
@@ -131,15 +151,8 @@ export default function ReconciliationIndex() {
     setMessage("");
     if (!stationId || !selectedShift)
       return setMessage("اختر نوع الوردية أولًا.");
-    if (
-      !groupedMeters.length ||
-      groupedMeters.some(
-        (group) =>
-          group.meters.length !== 2 ||
-          new Set(group.meters.map((meter) => meter.code)).size !== 2,
-      )
-    )
-      return setMessage("يجب توفر عدادين نشطين مختلفين لكل خزان تشغيلي.");
+    if (!groupedMeters.length || groupedMeters.some((group) => group.meters.length !== Number(group.tank.meter_readings_count || 1)))
+      return setMessage("يجب توفر عدد العدادات المطلوب لكل خزان تشغيلي.");
     const openingMeters = meters.map((meter) => ({
       meter_id: meter.id,
       reading: Number(readings[meter.id]),
@@ -209,10 +222,10 @@ export default function ReconciliationIndex() {
       setDetailsSession(data.session || session);
       setDetailLines(data.lines || []);
       setDetailOperations(data.operations || []);
-      setDetailReadings(Object.fromEntries((data.lines || []).flatMap((line: any) => [
-        line.meter_id ? [`${line.id}:1`, line.closing_meter == null ? "" : String(line.closing_meter)] : [],
-        line.meter2_id ? [`${line.id}:2`, line.closing_meter2 == null ? "" : String(line.closing_meter2)] : [],
-      ])));
+      setDetailReadings(Object.fromEntries((data.lines || []).flatMap((line: any) => (line.meter_readings?.length ? line.meter_readings : [
+        line.meter_id ? { meter_id: line.meter_id, reading_number: 1, opening_reading: line.opening_meter, closing_reading: line.closing_meter } : null,
+        line.meter2_id ? { meter_id: line.meter2_id, reading_number: 2, opening_reading: line.opening_meter2, closing_reading: line.closing_meter2 } : null,
+      ].filter(Boolean)).map((reading: any) => [`${line.id}:${reading.reading_number}`, reading.closing_reading == null ? "" : String(reading.closing_reading)]))));
     } catch (reason: any) {
       setDetailsError(reason.message || "تعذر تحميل تفاصيل الجلسة.");
     } finally {
@@ -227,10 +240,11 @@ export default function ReconciliationIndex() {
       const { data: auth } = await supabase.auth.getSession();
       const headers: Record<string, string> = { "Content-Type": "application/json", ...(auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}) };
       for (const line of detailLines) {
-        const meters = [
-          line.meter_id ? { id: line.meter_id, value: detailReadings[`${line.id}:1`], opening: line.opening_meter } : null,
-          line.meter2_id ? { id: line.meter2_id, value: detailReadings[`${line.id}:2`], opening: line.opening_meter2 } : null,
-        ].filter(Boolean) as Array<{ id: string; value: string; opening: number }>;
+        const readings = line.meter_readings?.length ? line.meter_readings : [
+          line.meter_id ? { meter_id: line.meter_id, reading_number: 1, opening_reading: line.opening_meter } : null,
+          line.meter2_id ? { meter_id: line.meter2_id, reading_number: 2, opening_reading: line.opening_meter2 } : null,
+        ].filter(Boolean);
+        const meters = readings.map((reading: any) => ({ id: reading.meter_id, value: detailReadings[`${line.id}:${reading.reading_number}`], opening: reading.opening_reading })) as Array<{ id: string; value: string; opening: number }>;
         for (const meter of meters) {
           const value = Number(meter.value);
           if (!Number.isFinite(value) || value < Number(meter.opening)) throw new Error("تحقق من قراءات الإغلاق، ويجب ألا تقل عن قراءات البداية.");
@@ -253,10 +267,7 @@ export default function ReconciliationIndex() {
           <div>
             <span className="eyebrow">إدارة الورديات</span>
             <h2>فتح وإغلاق الوردية</h2>
-            <p>
-              لكل خزان عدادان مستقلان، أي قراءتان عند الفتح وقراءتان عند
-              الإغلاق.
-            </p>
+            <p>يحدد كل خزان عدد قراءات العداد المطلوبة، وتبقى جلساته القديمة محفوظة كما هي.</p>
           </div>
         </header>
         <section className="recon-stats">
@@ -270,8 +281,8 @@ export default function ReconciliationIndex() {
           </article>
           <article>
             <small>إجمالي خانات القراءة</small>
-            <b>{tanks.length * 2}</b>
-            <em>{tanks.length} خزان × 2</em>
+            <b>{groupedMeters.reduce((total, group) => total + group.meters.length, 0)}</b>
+            <em>إجمالي القراءات المطلوبة</em>
           </article>
         </section>
         <div className="page-heading">
@@ -285,12 +296,12 @@ export default function ReconciliationIndex() {
           </button>
         </div>
         {openForm && (
-          <section className="panel recon-open-form recon-dynamic-form">
+          <div className="modal-backdrop recon-open-modal" role="dialog" aria-modal="true" aria-labelledby="open-session-title" onMouseDown={() => setOpenForm(false)}>
+          <section className="panel recon-open-form recon-dynamic-form modal-card" onMouseDown={(event) => event.stopPropagation()}>
             <div>
-              <b>نموذج فتح الوردية</b>
+              <div className="recon-modal-heading"><b id="open-session-title">نموذج فتح الوردية</b><button type="button" className="modal-close" aria-label="إغلاق نموذج فتح الوردية" onClick={() => setOpenForm(false)}>×</button></div>
               <small>
-                كل بطاقة تخص خزانًا واحدًا وتحتوي على العداد الأول والثاني.
-                الإجمالي الحالي: {tanks.length * 2} قراءة عداد.
+                كل بطاقة تخص خزانًا واحدًا وتعرض العدد المحدد له. الإجمالي الحالي: {groupedMeters.reduce((total, group) => total + group.meters.length, 0)} قراءة.
               </small>
             </div>
             <form onSubmit={openSession}>
@@ -319,7 +330,7 @@ export default function ReconciliationIndex() {
                       {group.tank.tank_code} · {group.tank.tank_name}
                     </legend>
                     <p>
-                      {group.tank.fuel_name} · الرصيد الحالي{" "}
+                      {group.tank.fuel_name} · {group.meters.length} قراءات مطلوبة · الرصيد الحالي{" "}
                       {Number(group.tank.system_quantity || 0).toLocaleString(
                         "ar-EG",
                       )}{" "}
@@ -328,7 +339,7 @@ export default function ReconciliationIndex() {
                     <div className="meter-reading-grid">
                       {group.meters.map((meter, index) => (
                         <label key={meter.id}>
-                          العداد {index + 1}
+                          قراءة العداد {index + 1}
                           <small>{meter.code}</small>
                           <input
                             required
@@ -358,6 +369,7 @@ export default function ReconciliationIndex() {
               </button>
             </form>
           </section>
+          </div>
         )}
         {message && <div className="notice notice-warning">{message}</div>}
         {loading ? (
@@ -371,7 +383,7 @@ export default function ReconciliationIndex() {
                 <div>
                   <h3>الورديات المفتوحة</h3>
                   <p>
-                    أدخل قراءة النهاية للعدادين داخل صفحة الجلسة ثم اعتمد
+                    أدخل قراءة النهاية لكل العدادات داخل صفحة الجلسة ثم اعتمد
                     الإغلاق.
                   </p>
                 </div>
@@ -467,7 +479,7 @@ export default function ReconciliationIndex() {
                 <article><small>المصروفات</small><b>{Number(detailsSession.expense_total || 0).toLocaleString('ar-EG')} ج.م</b><em>المعتمد فقط</em></article>
                 <article><small>صافي المحصل</small><b>{Number(detailsSession.net_collected || 0).toLocaleString('ar-EG')} ج.م</b><em>بعد المصروفات</em></article>
               </div>
-              <div className="session-detail-lines">{detailLines.map((line) => <article className="session-detail-line" key={line.id}><header><b>{line.tank_code} · {line.tank_name || line.fuel_name}</b><span>{line.fuel_name || 'وقود'}</span></header><div className="session-meter-grid"><div><b>العداد الأول</b><span>{line.meter_code || line.meter_name || 'غير مرتبط'}</span><small>فتح: {line.opening_meter ?? '—'} · الإغلاق: {line.closing_meter ?? '—'}</small>{detailsSession.status === 'open' && line.meter_id && <input type="number" min={line.opening_meter ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:1`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:1`]: event.target.value }))} />}</div><div><b>العداد الثاني</b><span>{line.meter2_code || line.meter2_name || 'غير مرتبط'}</span><small>فتح: {line.opening_meter2 ?? '—'} · الإغلاق: {line.closing_meter2 ?? '—'}</small>{detailsSession.status === 'open' && line.meter2_id && <input type="number" min={line.opening_meter2 ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:2`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:2`]: event.target.value }))} />}</div></div><footer>الافتتاح: {line.opening_tank_qty ?? '—'} لتر · التوريد: {line.delivered_qty ?? '—'} لتر · البيع: {line.sold_qty ?? '—'} لتر · المتوقع: {line.expected_closing_qty ?? '—'} لتر · الفعلي: {line.actual_closing_qty ?? '—'} لتر · الفرق: {line.variance_qty ?? '—'} لتر</footer></article>)}</div>
+              <div className="session-detail-lines">{detailLines.map((line) => <article className="session-detail-line" key={line.id}><header><b>{line.tank_code} · {line.tank_name || line.fuel_name}</b><span>{line.fuel_name || 'وقود'}</span></header><SessionMeterGrid line={line} editable={detailsSession.status === 'open'} detailReadings={detailReadings} setDetailReadings={setDetailReadings} /><footer>الافتتاح: {line.opening_tank_qty ?? '—'} لتر · التوريد: {line.delivered_qty ?? '—'} لتر · البيع: {line.sold_qty ?? '—'} لتر · المتوقع: {line.expected_closing_qty ?? '—'} لتر · الفعلي: {line.actual_closing_qty ?? '—'} لتر · الفرق: {line.variance_qty ?? '—'} لتر</footer></article>)}</div>
               <section className="session-operations-modal"><h4>تفاصيل عمليات الجلسة</h4>{detailOperations.length ? <div className="table-wrap"><table><thead><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>الكمية</th><th>القيمة</th><th>الحساب</th></tr></thead><tbody>{detailOperations.map((operation: any) => <tr key={`${operation.type}-${operation.id}`}><td>{operation.occurred_at ? new Date(operation.occurred_at).toLocaleString('ar-EG') : '—'}</td><td>{operation.type === 'sale' ? 'بيع' : operation.type === 'delivery' ? 'توريد' : 'خدمة'}</td><td>{operation.detail || '—'}</td><td>{operation.quantity ? `${Number(operation.quantity).toLocaleString('ar-EG')} لتر` : '—'}</td><td>{Number(operation.value || 0).toLocaleString('ar-EG')} ج.م</td><td>{operation.account || '—'}</td></tr>)}</tbody></table></div> : <p>لا توجد عمليات مسجلة لهذه الجلسة.</p>}</section>
               {detailsSession.status === 'open' && <><button className="ui-button mt-4" disabled={savingDetailReadings} onClick={saveDetailReadings}>{savingDetailReadings ? 'جارٍ حفظ القراءات...' : 'حفظ قراءات العدادات'}</button><button className="ui-button secondary mt-4 mr-2" onClick={() => { window.location.href = `/reconciliation/session?sessionId=${detailsSession.id}`; }}>فتح شاشة الإغلاق الكاملة</button></>}
             </>}

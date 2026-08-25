@@ -26,6 +26,7 @@ type Snapshot = {
     total_cost?: number;
     total_profit?: number;
     total_expenses?: number;
+    meter_sold?: number;
   };
   totals?: { total_collected?: number; total_revenue?: number; total_remaining?: number; total_cost?: number; total_profit?: number; total_services?: number; total_expenses?: number };
   reconciliation?: { total_variance?: number; open?: number };
@@ -227,6 +228,7 @@ export default function Dashboard() {
     { title: 'دخل الخدمات', value: serviceIncome, unit: 'ج.م', icon: 'sales', hint: `${serviceOperations} خدمة في الجلسة` },
     { title: 'إجمالي المصروفات', value: expenseTotal, unit: 'ج.م', icon: 'operations', hint: 'المصروفات المعتمدة في الجلسة' },
     { title: 'كمية الوقود المباعة', value: soldLiters, unit: 'لتر', icon: 'operations', hint: `${saleOperations} عملية بيع` },
+    { title: 'إجمالي السحب من العدادات', value: safeSnapshot.today?.meter_sold ?? 0, unit: 'لتر', icon: 'operations', hint: 'مجموع فروق قراءات الجلسة' },
   ];
 
   const actions: { href: string; icon: IconName; label: string }[] = [

@@ -35,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!shift) return res.status(400).json({ error: 'الوردية المختارة غير صالحة لهذه المحطة. حدّث الصفحة واختر وردية متاحة.' });
     const submittedReadings = new Map((opening_meters as any[]).map((item) => [String(item?.meter_id || ''), Number(item?.reading)]));
     const missingMeters = (activeMeters || []).filter((meter) => !submittedReadings.has(meter.id) || !Number.isFinite(submittedReadings.get(meter.id)) || (submittedReadings.get(meter.id) as number) < 0);
-    if (missingMeters.length) return res.status(400).json({ error: `أدخل قراءة البداية للعدادات التالية: ${missingMeters.map((meter) => meter.id.slice(0, 8)).join('، ')}` });
+    if (missingMeters.length) return res.status(400).json({ error: 'يجب إدخال جميع قراءات العداد المطلوبة لكل خزان.' });
     const normalizedMeters = (activeMeters || []).map((meter) => ({ meter_id: meter.id, reading: submittedReadings.get(meter.id) }));
     if (opening_meters.length !== normalizedMeters.length) return res.status(400).json({ error: 'يجب إرسال قراءة واحدة لكل عداد نشط فقط.' });
     const { data: activeTanks, error: tanksError } = await supabase

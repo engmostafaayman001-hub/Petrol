@@ -20,6 +20,7 @@ type Tank = {
   status: string;
   is_active: boolean;
   notes?: string | null;
+  meter_readings_count: number;
 };
 
 const blankForm = {
@@ -33,6 +34,7 @@ const blankForm = {
   status: 'operational',
   is_active: true,
   notes: '',
+  meter_readings_count: '1',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -70,7 +72,7 @@ export default function TankSettings() {
           .order('sort_order', { ascending: true }),
         supabase
           .from('tanks')
-          .select('id,code,name,fuel_type_id,capacity,max_operating_level,min_safe_level,dead_stock,status,is_active,notes')
+          .select('id,code,name,fuel_type_id,capacity,max_operating_level,min_safe_level,dead_stock,status,is_active,notes,meter_readings_count')
           .eq('station_id', stationId)
           .order('code', { ascending: true }),
       ]);
@@ -104,6 +106,7 @@ export default function TankSettings() {
     const maxOperatingLevel = form.max_operating_level === '' ? capacity : Number(form.max_operating_level);
     const minSafeLevel = form.min_safe_level === '' ? 0 : Number(form.min_safe_level);
     const deadStock = form.dead_stock === '' ? 0 : Number(form.dead_stock);
+    const meterReadingsCount = Number(form.meter_readings_count);
     const payload = {
       station_id: stationId,
       code: form.code.trim().toUpperCase(),
@@ -116,10 +119,15 @@ export default function TankSettings() {
       status: form.status,
       is_active: form.is_active,
       notes: form.notes.trim() || null,
+      meter_readings_count: meterReadingsCount,
     };
 
     if (!payload.code || !payload.name || !payload.fuel_type_id || !Number.isFinite(payload.capacity) || payload.capacity <= 0) {
       setMessage('يجب إدخال الكود والاسم ونوع الوقود وسعة صحيحة.');
+      return;
+    }
+    if (!Number.isInteger(meterReadingsCount) || meterReadingsCount < 1 || meterReadingsCount > 20) {
+      setMessage('عدد قراءات العداد يجب أن يكون رقمًا صحيحًا من 1 إلى 20.');
       return;
     }
     if (!Number.isFinite(maxOperatingLevel) || !Number.isFinite(minSafeLevel) || !Number.isFinite(deadStock) || minSafeLevel < 0 || deadStock < 0 || deadStock > minSafeLevel || minSafeLevel > maxOperatingLevel || maxOperatingLevel > capacity) {
@@ -174,6 +182,7 @@ export default function TankSettings() {
       status: tank.status,
       is_active: tank.is_active,
       notes: tank.notes || '',
+      meter_readings_count: String(tank.meter_readings_count ?? 1),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setEditorOpen(true);
@@ -274,6 +283,18 @@ export default function TankSettings() {
           />
         </FormField>
 
+        <FormField label="عدد قراءات العداد المطلوبة">
+          <input
+            type="number"
+            min="1"
+            max="20"
+            step="1"
+            value={form.meter_readings_count}
+            onChange={(e) => setForm((current) => ({ ...current, meter_readings_count: e.target.value }))}
+            className="w-full border rounded px-3 py-2"
+          />
+        </FormField>
+
         <FormField label="الحالة">
           <select
             value={form.status}
@@ -342,6 +363,7 @@ export default function TankSettings() {
                     <th className="px-4 py-3">الكود</th>
                     <th className="px-4 py-3">الاسم</th>
                     <th className="px-4 py-3">الوقود</th>
+                    <th className="px-4 py-3">قراءات العداد</th>
                     <th className="px-4 py-3">الحالة</th>
                     <th className="px-4 py-3">نشط</th>
                     <th className="px-4 py-3">إجراءات</th>
@@ -355,6 +377,7 @@ export default function TankSettings() {
                         <td className="px-4 py-3 align-top">{tank.code}</td>
                         <td className="px-4 py-3">{tank.name}</td>
                         <td className="px-4 py-3">{fuelLabel}</td>
+                        <td className="px-4 py-3">{tank.meter_readings_count}</td>
                         <td className="px-4 py-3">{STATUS_LABELS[tank.status] || tank.status}</td>
                         <td className="px-4 py-3">{tank.is_active ? 'نعم' : 'لا'}</td>
                         <td className="px-4 py-3 space-x-2 whitespace-nowrap">

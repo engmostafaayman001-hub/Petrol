@@ -56,15 +56,13 @@ export default function SessionPage() {
   }, [load]);
   async function submit() {
     if (!session?.id) return setMessage("معرّف الجلسة غير صالح.");
-    const missing = lines
-      .filter(
-        (line) =>
-          line.opening_meter == null ||
-          line.closing_meter == null ||
-          (line.meter2_id &&
-            (line.opening_meter2 == null || line.closing_meter2 == null)),
-      )
-      .map((line) => line.tank_code || line.fuel_name || "خزان غير معروف");
+    const missing = lines.flatMap((line) => {
+      const readings = line.meter_readings?.length ? line.meter_readings : [
+        line.meter_id && { reading_number: 1, opening_reading: line.opening_meter, closing_reading: line.closing_meter },
+        line.meter2_id && { reading_number: 2, opening_reading: line.opening_meter2, closing_reading: line.closing_meter2 },
+      ].filter(Boolean);
+      return readings.filter((reading: any) => reading.opening_reading == null || reading.closing_reading == null).map((reading: any) => `${line.tank_code || line.fuel_name || "خزان غير معروف"} يحتاج قراءة العداد رقم ${reading.reading_number}`);
+    });
     if (missing.length)
       return setMessage(
         `أدخل قراءتي النهاية للعدادات التالية: ${missing.join("، ")}`,
@@ -126,7 +124,7 @@ export default function SessionPage() {
               {session.business_date} ·{" "}
               {shiftLabel(session.shift_name, session.shift_code, session.shift_seq)}
             </h2>
-            <p>أدخل قراءة النهاية لكل عداد. لكل خزان عدادان مستقلان.</p>
+            <p>أدخل قراءة النهاية لكل عداد. يختلف عدد العدادات حسب إعداد كل خزان.</p>
           </div>
           <button className="ui-button secondary" onClick={load}>
             تحديث
@@ -215,31 +213,23 @@ function MeterLine({
   onSaved: () => void;
   disabled: boolean;
 }) {
-  const [first, setFirst] = useState(
-    line.closing_meter == null ? "" : String(line.closing_meter),
-  );
-  const [second, setSecond] = useState(
-    line.closing_meter2 == null ? "" : String(line.closing_meter2),
+  const readings = line.meter_readings?.length
+    ? line.meter_readings
+    : [
+        line.meter_id && { meter_id: line.meter_id, reading_number: 1, opening_reading: line.opening_meter, closing_reading: line.closing_meter, meter_code: line.meter_code, meter_name: line.meter_name },
+        line.meter2_id && { meter_id: line.meter2_id, reading_number: 2, opening_reading: line.opening_meter2, closing_reading: line.closing_meter2, meter_code: line.meter2_code, meter_name: line.meter2_name },
+      ].filter(Boolean);
+  const [closingValues, setClosingValues] = useState<Record<string, string>>(
+    Object.fromEntries(readings.map((reading: any) => [reading.meter_id, reading.closing_reading == null ? "" : String(reading.closing_reading)])),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   async function save() {
-    const values = [
-      {
-        id: line.meter_id,
-        opening: Number(line.opening_meter),
-        value: Number(first),
-      },
-      ...(line.meter2_id
-        ? [
-            {
-              id: line.meter2_id,
-              opening: Number(line.opening_meter2),
-              value: Number(second),
-            },
-          ]
-        : []),
-    ];
+    const values: Array<{ id: string; opening: number; value: number }> = readings.map((reading: any) => ({
+      id: reading.meter_id,
+      opening: Number(reading.opening_reading),
+      value: Number(closingValues[reading.meter_id] || ""),
+    }));
     if (
       values.some(
         (item) =>
@@ -289,48 +279,22 @@ function MeterLine({
           <h3>
             {line.tank_code} · {line.fuel_name}
           </h3>
-          <p>عدادان مستقلان · الكمية المحسوبة من الفرق تلقائيًا</p>
+            <p>{readings.length} قراءات عداد · الكمية المحسوبة من مجموع الفروق تلقائيًا</p>
         </div>
         <span className="status-badge status-info">قراءة النهاية</span>
       </header>
       <div className="meter-reading-grid">
-        <label>
-          العداد الأول
-          <small>
-            البداية: {Number(line.opening_meter || 0).toLocaleString("ar-EG")}
-          </small>
-          <input
-            disabled={disabled || saving}
-            type="number"
-            min="0"
-            step="0.001"
-            value={first}
-            onChange={(event) => setFirst(event.target.value)}
-            placeholder="قراءة النهاية"
-          />
-        </label>
-        {line.meter2_id && (
-          <label>
-            العداد الثاني
-            <small>
-              البداية:{" "}
-              {Number(line.opening_meter2 || 0).toLocaleString("ar-EG")}
-            </small>
-            <input
-              disabled={disabled || saving}
-              type="number"
-              min="0"
-              step="0.001"
-              value={second}
-              onChange={(event) => setSecond(event.target.value)}
-              placeholder="قراءة النهاية"
-            />
+        {readings.map((reading: any, index: number) => (
+          <label key={reading.meter_id}>
+            قراءة العداد {reading.reading_number || index + 1}
+            <small>{reading.meter_code || reading.meter_name || "عداد"} · البداية: {Number(reading.opening_reading || 0).toLocaleString("ar-EG")}</small>
+            <input disabled={disabled || saving} type="number" min="0" step="0.001" value={closingValues[reading.meter_id] || ""} onChange={(event) => setClosingValues((current) => ({ ...current, [reading.meter_id]: event.target.value }))} placeholder="قراءة النهاية" />
           </label>
-        )}
+        ))}
       </div>
       {!disabled && (
         <button className="ui-button mt-3" disabled={saving} onClick={save}>
-          {saving ? "جارٍ الحفظ…" : "حفظ قراءات العدادين"}
+          {saving ? "جارٍ الحفظ…" : "حفظ قراءات العدادات"}
         </button>
       )}
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}

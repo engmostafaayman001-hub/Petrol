@@ -35,13 +35,20 @@ export default async function handler(
     if (le) return res.status(500).json({ error: le.message });
     const { data: meterLines, error: meterLinesError } = await supabase
       .from("reconciliation_lines")
-      .select("id,meter2_id,opening_meter2,closing_meter2")
+      .select("id,meter2_id,opening_meter2,closing_meter2,meter_readings_count")
       .eq("session_id", sessionId);
     if (meterLinesError)
       return res.status(500).json({ error: meterLinesError.message });
     const meterLineMap = new Map(
       (meterLines || []).map((line: any) => [line.id, line]),
     );
+    const { data: storedReadings, error: storedReadingsError } = await supabase
+      .from("reconciliation_meter_readings")
+      .select("id,reconciliation_line_id,meter_id,reading_number,opening_reading,closing_reading,meter_sold_qty")
+      .eq("session_id", sessionId)
+      .order("reading_number", { ascending: true });
+    if (storedReadingsError && !/does not exist/i.test(storedReadingsError.message))
+      return res.status(500).json({ error: storedReadingsError.message });
     const tankIds = (lines || []).map((line: any) => line.tank_id).filter(Boolean);
     const { data: tankMeters, error: tankMetersError } = tankIds.length
       ? await supabase.from("pump_meters").select("id,tank_id,code,name,meter_slot,is_active").in("tank_id", tankIds).eq("station_id", sessions.station_id).eq("is_active", true)
@@ -51,7 +58,7 @@ export default async function handler(
     (tankMeters || []).forEach((meter: any) => metersByTank.set(meter.tank_id, [...(metersByTank.get(meter.tank_id) || []), meter]));
     const meterIds = Array.from(new Set((lines || []).flatMap((line: any) => {
       const available = metersByTank.get(line.tank_id) || [];
-      return [line.meter_id || available.find((meter) => meter.meter_slot === 1)?.id, meterLineMap.get(line.id)?.meter2_id || available.find((meter) => meter.meter_slot === 2)?.id].filter(Boolean);
+      return [line.meter_id || available.find((meter) => meter.meter_slot === 1)?.id, meterLineMap.get(line.id)?.meter2_id || available.find((meter) => meter.meter_slot === 2)?.id, ...(storedReadings || []).filter((reading: any) => reading.reconciliation_line_id === line.id).map((reading: any) => reading.meter_id)].filter(Boolean);
     })));
     const { data: meters, error: metersError } = meterIds.length
       ? await supabase.from("pump_meters").select("id,code,name,meter_slot").in("id", meterIds)
@@ -61,6 +68,7 @@ export default async function handler(
     const enrichedLines = (lines || []).map((line: any) => ({
       ...line,
       ...(meterLineMap.get(line.id) || {}),
+      meter_readings: (storedReadings || []).filter((reading: any) => reading.reconciliation_line_id === line.id).map((reading: any) => ({ ...reading, meter_code: meterMap.get(reading.meter_id)?.code || null, meter_name: meterMap.get(reading.meter_id)?.name || null })),
       meter_id: line.meter_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 1)?.id || null,
       meter2_id: meterLineMap.get(line.id)?.meter2_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 2)?.id || null,
       meter_code: meterMap.get(line.meter_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 1)?.id)?.code || null,
