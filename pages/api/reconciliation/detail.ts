@@ -81,9 +81,7 @@ export default async function handler(
       .from("v_sales")
       .select("id,fuel_type_id,fuel_name,quantity,gross_amount,paid_amount,created_at,created_by_name,customer_id,session_id")
       .eq("station_id", sessions.station_id)
-      .eq("business_date", sessions.business_date)
-      .eq("shift_id", sessions.shift_id)
-      .or(`session_id.eq.${sessionId},and(session_id.is.null,business_date.eq.${sessions.business_date},shift_id.eq.${sessions.shift_id})`)
+      .eq("session_id", sessionId)
       .eq("status", "active");
     let { data: sales, error: salesError } = await salesQuery;
     if (salesError && /column .* does not exist/i.test(salesError.message)) {
@@ -91,14 +89,15 @@ export default async function handler(
         .from("v_sales")
         .select("id,fuel_type_id,fuel_name,quantity,gross_amount,created_at,created_by_name")
         .eq("station_id", sessions.station_id)
-        .eq("business_date", sessions.business_date)
-        .eq("shift_id", sessions.shift_id)
+        .eq("session_id", sessionId)
         .eq("status", "active");
       const legacySales = await salesQuery;
       sales = (legacySales.data || []).map((sale: any) => ({ ...sale, paid_amount: 0, customer_id: null, session_id: null }));
       salesError = legacySales.error;
     }
     if (salesError) return res.status(500).json({ error: salesError.message });
+    const { data: salesSummary, error: salesSummaryError } = await supabase.rpc("fn_session_sales_summary", { p_session_id: sessionId });
+    if (salesSummaryError) return res.status(500).json({ error: salesSummaryError.message });
     const customerIds = Array.from(new Set((sales || []).map((sale: any) => sale.customer_id).filter(Boolean)));
     const { data: customers, error: customersError } = customerIds.length
       ? await supabase.from("customers").select("id,name").in("id", customerIds)
@@ -109,9 +108,7 @@ export default async function handler(
       .from("v_deliveries")
       .select("id,fuel_type_id,fuel_name,quantity,total_cost,unit_cost,created_at,created_by_name,supplier_id,supplier_name,session_id")
       .eq("station_id", sessions.station_id)
-      .eq("business_date", sessions.business_date)
-      .eq("shift_id", sessions.shift_id)
-      .or(`session_id.eq.${sessionId},and(session_id.is.null,business_date.eq.${sessions.business_date},shift_id.eq.${sessions.shift_id})`)
+      .eq("session_id", sessionId)
       .eq("status", "active");
     let { data: deliveries, error: deliveriesError } = await deliveriesQuery;
     if (deliveriesError && /column .* does not exist/i.test(deliveriesError.message)) {
@@ -119,8 +116,7 @@ export default async function handler(
         .from("v_deliveries")
         .select("id,fuel_type_id,fuel_name,quantity,total_cost,unit_cost,created_at,created_by_name,supplier_id,supplier_name")
         .eq("station_id", sessions.station_id)
-        .eq("business_date", sessions.business_date)
-        .eq("shift_id", sessions.shift_id)
+        .eq("session_id", sessionId)
         .eq("status", "active");
       const legacyDeliveries = await deliveriesQuery;
       deliveries = (legacyDeliveries.data || []).map((delivery: any) => ({ ...delivery, session_id: null }));
@@ -199,7 +195,8 @@ export default async function handler(
       ...(services || []).map((service: any) => ({ id: service.id, occurred_at: service.created_at, type: 'service', detail: service.service_name || service.service_type, quantity: 0, value: Number(service.amount || 0), user: service.created_by, account: null, status: 'active' })),
       ...(accountTransactions || []).map((entry: any) => ({ id: entry.id, occurred_at: entry.created_at, type: entry.transaction_type === 'customer_payment' ? 'customer_payment' : 'supplier_payment', detail: entry.transaction_type === 'customer_payment' ? 'تحصيل عميل' : 'دفع مورد', quantity: 0, value: Number(entry.amount || 0), user: entry.created_by, account: accountNames.get(entry.customer_id || entry.supplier_id) || null, status: 'active' })),
     ].sort((left, right) => String(right.occurred_at || '').localeCompare(String(left.occurred_at || '')));
-    const totalRevenue = (cashByFuel as any[]).reduce((total, row) => total + row.revenue, 0) + serviceTotal;
+    const totalFuelRevenue = Number(salesSummary?.totalSalesAmount ?? (cashByFuel as any[]).reduce((total, row) => total + row.revenue, 0));
+    const totalRevenue = totalFuelRevenue + serviceTotal;
     const totalRemaining = (cashByFuel as any[]).reduce((total, row) => total + row.remaining, 0);
 
     return res
@@ -211,7 +208,13 @@ export default async function handler(
           total_collected: totalCollected + customerPaymentTotal + serviceTotal,
           total_remaining: totalRemaining,
           sale_count: sales?.length || 0,
-          sold_quantity: (sales || []).reduce((total: number, sale: any) => total + Number(sale.quantity || 0), 0),
+          sold_quantity: Number(salesSummary?.totalSalesQuantity ?? 0),
+          regular_sales_quantity: Number(salesSummary?.regularSalesQuantity ?? 0),
+          manual_sales_quantity: Number(salesSummary?.manualSalesQuantity ?? 0),
+          registered_sales_quantity: Number(salesSummary?.registeredSalesQuantity ?? 0),
+          settlement_difference_quantity: Number(salesSummary?.settlementDifferenceQuantity ?? 0),
+          meter_sales_quantity: Number(salesSummary?.meterQuantity ?? 0),
+          sales_summary: salesSummary,
           delivery_count: deliveries?.length || 0,
           delivered_quantity: (deliveries || []).reduce((total: number, delivery: any) => total + Number(delivery.quantity || 0), 0),
           delivery_total: deliveryTotal,
@@ -224,6 +227,7 @@ export default async function handler(
         },
         lines: enrichedLines,
         cashByFuel,
+        salesSummary,
         deliveries: deliveries || [],
         expenses: expenses || [],
         operations,

@@ -44,6 +44,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const current = (data && typeof data === 'object') ? data as any : {};
     const services = (servicesData && typeof servicesData === 'object') ? servicesData as any : {};
+    const { data: sessionSalesSummary, error: sessionSalesSummaryError } = current.session?.id
+      ? await supabase.rpc('fn_session_sales_summary', { p_session_id: current.session.id })
+      : { data: null, error: null };
+    if (sessionSalesSummaryError) return res.status(500).json({ error: sessionSalesSummaryError.message });
+    const sessionSalesResult = current.session?.id
+      ? await supabase.from('v_sales').select('*').eq('session_id', current.session.id).eq('status', 'active').order('created_at', { ascending: false })
+      : { data: [], error: null };
+    if (sessionSalesResult.error) return res.status(500).json({ error: sessionSalesResult.error.message });
     const [tankResult, expenseResult, meterResult, paymentResult] = await Promise.all([
       supabase
         .from('v_tank_status')
@@ -77,19 +85,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const expenseTotal = (expenseResult.data ?? []).reduce((sum: number, row: any) => sum + Number(row?.amount ?? 0), 0);
     const serviceTotal = paymentNumber(services.total);
     const serviceCount = Number(services.count ?? 0);
-    const revenue = paymentNumber(current.total_revenue);
+    const revenue = paymentNumber(sessionSalesSummary?.totalSalesAmount ?? current.total_revenue);
     const collected = paymentNumber(current.total_collected) + customerPayments + serviceTotal;
     const remaining = paymentNumber(current.total_remaining);
     const cost = paymentNumber(current.total_delivered_cost);
-    const sold = paymentNumber(current.sold_quantity);
+    const sold = paymentNumber(sessionSalesSummary?.totalSalesQuantity ?? current.sold_quantity);
     const delivered = paymentNumber(current.delivered_quantity);
+    const dashboardByFuel = Array.isArray(sessionSalesSummary?.byFuel) && sessionSalesSummary.byFuel.length
+      ? sessionSalesSummary.byFuel.map((fuel: any) => ({
+          fuel_type_id: fuel.fuel_type_id,
+          fuel_code: fuel.fuel_code,
+          fuel_name: fuel.fuel_name,
+          sold_quantity: paymentNumber(sessionSalesSummary.meterComplete ? fuel.meter_quantity : fuel.registered_quantity),
+          revenue: paymentNumber(sessionSalesSummary.meterComplete ? fuel.meter_amount : fuel.registered_amount),
+          regular_sales: paymentNumber(fuel.regular_quantity),
+          manual_sales: paymentNumber(fuel.manual_quantity),
+        }))
+      : (Array.isArray(current.by_fuel) ? current.by_fuel : []);
 
     const mergedSnapshot = {
       session: current.session ?? null,
-      sales: Array.isArray(current.sales) ? current.sales : [],
+      sales: Array.isArray(sessionSalesResult.data) ? sessionSalesResult.data : (Array.isArray(current.sales) ? current.sales : []),
       deliveries: Array.isArray(current.deliveries) ? current.deliveries : [],
       services: Array.isArray(services.services) ? services.services : [],
-      by_fuel: Array.isArray(current.by_fuel) ? current.by_fuel : [],
+      by_fuel: dashboardByFuel,
       stock: {
         total_system: tankTotal,
         total_available: tankAvailable,
@@ -113,8 +132,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
         total_expenses: expenseTotal,
-        meter_sold: meterSold,
-        meter_value: meterValue,
+        meter_sold: sessionSalesSummary?.meterComplete ? meterSold : 0,
+        meter_value: sessionSalesSummary?.meterComplete ? meterValue : 0,
+        regular_sales: paymentNumber(sessionSalesSummary?.regularSalesQuantity),
+        manual_sales: paymentNumber(sessionSalesSummary?.manualSalesQuantity),
+        settlement_difference: sessionSalesSummary?.meterComplete ? paymentNumber(sessionSalesSummary.settlementDifferenceQuantity) : null,
+        meter_complete: Boolean(sessionSalesSummary?.meterComplete),
       },
       totals: {
         total_collected: collected,
@@ -129,8 +152,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total_profit: collected - cost - expenseTotal,
         total_services: serviceTotal,
         total_expenses: expenseTotal,
-        meter_sold: meterSold,
-        meter_value: meterValue,
+        meter_sold: sessionSalesSummary?.meterComplete ? meterSold : 0,
+        meter_value: sessionSalesSummary?.meterComplete ? meterValue : 0,
+        regular_sales: paymentNumber(sessionSalesSummary?.regularSalesQuantity),
+        manual_sales: paymentNumber(sessionSalesSummary?.manualSalesQuantity),
+        settlement_difference: sessionSalesSummary?.meterComplete ? paymentNumber(sessionSalesSummary.settlementDifferenceQuantity) : null,
+        meter_complete: Boolean(sessionSalesSummary?.meterComplete),
       },
       trend: [],
     };

@@ -31,8 +31,12 @@ type Snapshot = {
     supplier_payments?: number;
     net_cash?: number;
     meter_value?: number;
+    meter_complete?: boolean;
+    regular_sales?: number;
+    manual_sales?: number;
+    settlement_difference?: number;
   };
-  totals?: { total_collected?: number; total_revenue?: number; total_remaining?: number; total_cost?: number; total_profit?: number; total_services?: number; total_expenses?: number };
+  totals?: { total_collected?: number; total_revenue?: number; total_remaining?: number; total_cost?: number; total_profit?: number; total_services?: number; total_expenses?: number; regular_sales?: number; manual_sales?: number; settlement_difference?: number };
   reconciliation?: { total_variance?: number; open?: number };
   attention?: { critical_alerts?: number };
   trend?: Array<{ business_date?: string; closing_stock?: number; sold?: number; delivered?: number; variance?: number }>;
@@ -232,8 +236,11 @@ export default function Dashboard() {
     { title: 'دخل الخدمات', value: serviceIncome, unit: 'ج.م', icon: 'sales', hint: `${serviceOperations} خدمة في الجلسة` },
     { title: 'إجمالي المصروفات', value: expenseTotal, unit: 'ج.م', icon: 'operations', hint: 'المصروفات المعتمدة في الجلسة' },
     { title: 'كمية الوقود المباعة', value: soldLiters, unit: 'لتر', icon: 'operations', hint: `${saleOperations} عملية بيع` },
-    { title: 'إجمالي السحب من العدادات', value: safeSnapshot.today?.meter_sold ?? 0, unit: 'لتر', icon: 'operations', hint: 'مجموع فروق قراءات الجلسة' },
-    { title: 'قيمة فرق العدادات', value: safeSnapshot.today?.meter_value ?? 0, unit: 'ج.م', icon: 'sales', hint: 'حسب سعر الجلسة المحفوظ' },
+    { title: 'إجمالي السحب من العدادات', value: safeSnapshot.today?.meter_sold ?? 0, unit: 'لتر', icon: 'operations', hint: safeSnapshot.today?.meter_complete ? 'مجموع فروق قراءات الجلسة' : 'القراءات غير مكتملة' },
+    { title: 'المبيعات العادية', value: safeSnapshot.today?.regular_sales ?? 0, unit: 'لتر', icon: 'operations', hint: 'تفصيل داخل إجمالي المبيعات' },
+    { title: 'المبيعات اليدوية', value: safeSnapshot.today?.manual_sales ?? 0, unit: 'لتر', icon: 'operations', hint: 'تفصيل داخل إجمالي المبيعات' },
+    { title: 'فرق التسوية', value: safeSnapshot.today?.settlement_difference ?? 0, unit: 'لتر', icon: 'adjust', hint: 'العداد ناقص المبيعات المسجلة' },
+    { title: 'قيمة مبيعات العداد', value: safeSnapshot.today?.meter_value ?? 0, unit: 'ج.م', icon: 'sales', hint: 'ليست قيمة إضافية فوق المبيعات' },
     { title: 'تحصيلات العملاء', value: safeSnapshot.today?.customer_payments ?? 0, unit: 'ج.م', icon: 'sales', hint: 'تحصيلات الجلسة الحالية' },
     { title: 'مدفوعات الموردين', value: safeSnapshot.today?.supplier_payments ?? 0, unit: 'ج.م', icon: 'operations', hint: 'دفعات الجلسة الحالية' },
     { title: 'صافي حركة النقد', value: safeSnapshot.today?.net_cash ?? 0, unit: 'ج.م', icon: 'sales', hint: 'النقد الداخل ناقص الخارج' },

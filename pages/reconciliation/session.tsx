@@ -162,12 +162,16 @@ export default function SessionPage() {
               <strong className="block mt-1 text-xl text-[var(--text-heading)]">
                 {money(session.total_revenue ?? session.total_collected)}
               </strong>
+              <small>{formatQuantity(session.sold_quantity || 0)} من فرق العدادات</small>
             </div>
           </div>
         </section>
         <section className="recon-stats mb-5">
               <article><small>إجمالي فرق العدادات</small><b>{formatQuantity((lines || []).reduce((total: number, line: any) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_sold_qty || 0), 0), 0))}</b><em>مجموع فروق العدادات</em></article>
           <article><small>قيمة فرق العدادات</small><b>{money((lines || []).reduce((total: number, line: any) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_value || 0), 0), 0))}</b><em>حسب سعر الجلسة المحفوظ</em></article>
+          <article><small>المبيعات العادية</small><b>{formatQuantity(session.regular_sales_quantity || 0)}</b><em>تفصيل داخل إجمالي المبيعات</em></article>
+          <article><small>المبيعات اليدوية</small><b>{formatQuantity(session.manual_sales_quantity || 0)}</b><em>تفصيل داخل إجمالي المبيعات</em></article>
+          <article><small>فرق التسوية</small><b>{session.sales_summary?.meterComplete ? formatQuantity(session.settlement_difference_quantity || 0) : "غير مكتمل"}</b><em>{session.sales_summary?.meterComplete ? (Number(session.settlement_difference_quantity || 0) === 0 ? "متطابق" : "غير متطابق") : "أكمل قراءات العدادات"}</em></article>
         </section>
         <section className="recon-stats mb-5">
           <article><small>المبيعات المحصلة</small><b>{money(session.total_collected)}</b></article>

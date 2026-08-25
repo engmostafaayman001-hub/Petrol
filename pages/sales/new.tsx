@@ -32,6 +32,7 @@ export default function NewSale() {
     driver_name: "",
     vehicle_number: "",
     payment_method: "نقدي",
+    sales_channel: "regular" as "regular" | "manual",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -105,6 +106,7 @@ export default function NewSale() {
           driver_name: driverName,
           vehicle_number: vehicleNumber,
           payment_method: form.payment_method,
+          sales_channel: form.sales_channel,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -235,6 +237,19 @@ export default function NewSale() {
             <div className="form-field">
               <label>سعر الوحدة</label>
               <input readOnly value={formatPrice(unitPrice)} />
+            </div>
+            <div className="form-field">
+              <label htmlFor="sale-channel">نوع البيع</label>
+              <select
+                id="sale-channel"
+                value={form.sales_channel}
+                onChange={(event) =>
+                  setForm({ ...form, sales_channel: event.target.value as "regular" | "manual" })
+                }
+              >
+                <option value="regular">مبيعات عادية</option>
+                <option value="manual">مبيعات يدوية</option>
+              </select>
             </div>
             <div className="form-field">
               <label htmlFor="sale-paid">المدفوع</label>

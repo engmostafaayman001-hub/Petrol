@@ -145,6 +145,9 @@ export default async function handler(
             expensesResult.error?.message ||
             accountTransactionsResult.error?.message,
         });
+    const reportSessionIds = (sessionsResult.data || []).map((session: any) => session.id);
+    const reportSessionIdSet = new Set(reportSessionIds);
+    const scopedSales = (salesResult.data || []).filter((sale: any) => reportSessionIdSet.has(sale.session_id));
     const groups = new Map<string, any>();
     for (const row of movementResult.data || []) {
       const key = row.fuel_type_id;
@@ -168,7 +171,7 @@ export default async function handler(
         current[field] += Number(row[field] || 0);
       groups.set(key, current);
     }
-    for (const sale of salesResult.data || []) {
+    for (const sale of scopedSales) {
       const current = groups.get(sale.fuel_type_id) || {
         fuel_type_id: sale.fuel_type_id,
         fuel_name: sale.fuel_name,
@@ -230,7 +233,7 @@ export default async function handler(
           positiveVariance,
       );
     }
-    const rows = [...groups.values()].map((row: any) => {
+    let rows = [...groups.values()].map((row: any) => {
       const revenue = Number(row.revenue || 0);
       const deliveredCost = Number(row.cost || 0);
       const deliveredQuantity = Number(row.delivery_cost_quantity || 0);
@@ -293,18 +296,87 @@ export default async function handler(
     );
     const expenses = expensesResult.data || [];
     const accountTransactions = accountTransactionsResult.data || [];
-    const reportSessionIds = (sessionsResult.data || []).map((session: any) => session.id);
     const meterReadingsResult = reportSessionIds.length
       ? await supabase.from("reconciliation_meter_readings").select("id,session_id,reconciliation_line_id,meter_id,reading_number,opening_reading,closing_reading,meter_sold_qty,unit_price,meter_value").in("session_id", reportSessionIds).order("recorded_at", { ascending: false })
       : { data: [], error: null };
     if (meterReadingsResult.error && !/does not exist/i.test(meterReadingsResult.error.message)) return res.status(500).json({ error: meterReadingsResult.error.message });
+    const sessionSummaryResults = await Promise.all(
+      reportSessionIds.map((id: string) => supabase.rpc("fn_session_sales_summary", { p_session_id: id })),
+    );
+    if (sessionSummaryResults.some((result: any) => result.error)) {
+      const summaryError = sessionSummaryResults.find((result: any) => result.error)?.error;
+      return res.status(500).json({ error: summaryError?.message || "تعذر حساب ملخص مبيعات الجلسة." });
+    }
+    const sessionSummaries = sessionSummaryResults.map((result: any, index: number) => ({
+      session_id: reportSessionIds[index],
+      ...(result.data || {}),
+    }));
+    const summaryTotals = sessionSummaries.reduce((total: any, summary: any) => ({
+      meterQuantity: total.meterQuantity + Number(summary.meterQuantity || 0),
+      regularSalesQuantity: total.regularSalesQuantity + Number(summary.regularSalesQuantity || 0),
+      manualSalesQuantity: total.manualSalesQuantity + Number(summary.manualSalesQuantity || 0),
+      registeredSalesQuantity: total.registeredSalesQuantity + Number(summary.registeredSalesQuantity || 0),
+      totalSalesQuantity: total.totalSalesQuantity + Number(summary.totalSalesQuantity || 0),
+      totalSalesAmount: total.totalSalesAmount + Number(summary.totalSalesAmount || 0),
+      registeredSalesAmount: total.registeredSalesAmount + Number(summary.registeredSalesAmount || 0),
+      settlementDifferenceQuantity: total.settlementDifferenceQuantity + Number(summary.settlementDifferenceQuantity || 0),
+    }), { meterQuantity: 0, regularSalesQuantity: 0, manualSalesQuantity: 0, registeredSalesQuantity: 0, totalSalesQuantity: 0, totalSalesAmount: 0, registeredSalesAmount: 0, settlementDifferenceQuantity: 0 });
+    const sessionsWithSales = (sessionsResult.data || []).map((session: any) => {
+      const summary = sessionSummaries.find((item: any) => item.session_id === session.id);
+      return {
+        ...session,
+        total_sales_quantity: summary?.totalSalesQuantity ?? 0,
+        regular_sales_quantity: summary?.regularSalesQuantity ?? 0,
+        manual_sales_quantity: summary?.manualSalesQuantity ?? 0,
+        registered_sales_quantity: summary?.registeredSalesQuantity ?? 0,
+        settlement_difference_quantity: summary?.settlementDifferenceQuantity ?? null,
+        meter_complete: summary?.meterComplete ?? false,
+      };
+    });
+    const summaryByFuel = new Map<string, any>();
+    for (const summary of sessionSummaries) {
+      for (const fuel of summary.byFuel || []) {
+        const current = summaryByFuel.get(fuel.fuel_type_id) || { registered_quantity: 0, regular_quantity: 0, manual_quantity: 0, registered_amount: 0, meter_quantity: 0, meter_amount: 0 };
+        current.registered_quantity += Number(fuel.registered_quantity || 0);
+        current.regular_quantity += Number(fuel.regular_quantity || 0);
+        current.manual_quantity += Number(fuel.manual_quantity || 0);
+        current.registered_amount += Number(fuel.registered_amount || 0);
+        current.meter_quantity += Number(fuel.meter_quantity || 0);
+        current.meter_amount += Number(fuel.meter_amount || 0);
+        summaryByFuel.set(fuel.fuel_type_id, current);
+      }
+    }
+    rows = rows.map((row: any) => {
+      const breakdown = summaryByFuel.get(row.fuel_type_id);
+      if (!breakdown) return row;
+      const hasCompletedMeter = sessionSummaries.some((summary: any) => summary.meterComplete);
+      const actualQuantity = hasCompletedMeter ? breakdown.meter_quantity : breakdown.registered_quantity;
+      const actualRevenue = hasCompletedMeter ? breakdown.meter_amount : breakdown.registered_amount;
+      const averagePurchasePrice = Number(row.average_purchase_price || 0);
+      const cost = actualQuantity * averagePurchasePrice;
+      return {
+        ...row,
+        revenue: actualRevenue,
+        registered_revenue: breakdown.registered_amount,
+        meter_revenue: actualRevenue,
+        regular_sales_quantity: breakdown.regular_quantity,
+        manual_sales_quantity: breakdown.manual_quantity,
+        registered_sales_quantity: breakdown.registered_quantity,
+        total_sales_quantity: actualQuantity,
+        settlement_difference_quantity: breakdown.meter_quantity - breakdown.registered_quantity,
+        meter_sold: breakdown.meter_quantity,
+        cost,
+        profit: actualRevenue - cost,
+        average_sale_price: actualQuantity ? actualRevenue / actualQuantity : 0,
+      };
+    });
     const expenseTotal = expenses.reduce(
       (total: number, expense: any) => total + Number(expense.amount || 0),
       0,
     );
     const totals = {
       collected: fuelTotals.collected,
-      revenue: fuelTotals.revenue + serviceTotal,
+      revenue: Number(summaryTotals.totalSalesAmount || fuelTotals.revenue) + serviceTotal,
       remaining: fuelTotals.remaining,
       cost: fuelTotals.cost,
       procurement_cost: procurementCost,
@@ -323,10 +395,12 @@ export default async function handler(
         totals,
         services,
         expenses,
-        sessions: sessionsResult.data || [],
+        sessions: sessionsWithSales,
         meterSales,
         accountTransactions,
         meterReadings: meterReadingsResult.data || [],
+        sessionSummaries,
+        salesSummary: summaryTotals,
       });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
