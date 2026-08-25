@@ -14,7 +14,7 @@ type Delivery = { id: string; business_date: string; delivered_at?: string; supp
 type Movement = { id: string; business_date: string; occurred_at?: string; txn_type: string; fuel_name?: string; tank_code?: string; quantity_delta: number; running_balance?: number; source_id?: string; created_by_name?: string };
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
 const money = (value: number) => formatMoneyValue(value);
-const price = (value: number) => formatPrice(value);
+const price = (value: number, withCurrency = true) => formatPrice(value, withCurrency);
 const qty = (value: number) => formatQuantity(value, 3);
 const movementLabel: Record<string, string> = { sale: 'بيع', delivery: 'توريد', adjustment: 'تسوية', variance_writeoff: 'خصم فرق', reversal: 'إلغاء' };
 

@@ -7,6 +7,8 @@ import { useCurrentStationId } from '../../src/lib/station';
 import supabase from '../../src/lib/supabaseClient';
 import { formatMoney, multiplyMoney, parseNumericInput } from '../../src/core/numbers';
 
+const cairoDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
+
 export default function NewDelivery() {
   const { user } = useRequireAuth();
   const router = useRouter();
@@ -16,7 +18,7 @@ export default function NewDelivery() {
   const [supplierFormOpen, setSupplierFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [supplierForm, setSupplierForm] = useState({ name: '', code: '', contact_name: '', contact_phone: '', notes: '' });
-  const [form, setForm] = useState<any>({ station_id: '', tank_id: '', business_date: '', supplier_id: '', quantity: '', unit_cost: '', paid_amount: '', reference_no: '', notes: '' });
+  const [form, setForm] = useState<any>({ station_id: '', tank_id: '', business_date: cairoDate(), supplier_id: '', quantity: '', unit_cost: '', paid_amount: '', reference_no: '', notes: '' });
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -70,8 +72,33 @@ export default function NewDelivery() {
       return;
     }
 
-    if (!form.tank_id || !form.supplier_id || !form.business_date || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0 || !Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > quantity * unitCost) {
-      setMessage('تحقق من الحقول');
+    if (!form.tank_id) {
+      setMessage('اختر الخزان.');
+      return;
+    }
+    if (!form.supplier_id) {
+      setMessage('اختر المورد.');
+      return;
+    }
+    if (!form.business_date) {
+      setMessage('أدخل تاريخ العملية.');
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setMessage('أدخل كمية صحيحة أكبر من صفر.');
+      return;
+    }
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      setMessage('أدخل سعر الوحدة بصيغة صحيحة، مثل 20.62.86.');
+      return;
+    }
+    if (!Number.isFinite(paidAmount) || paidAmount < 0) {
+      setMessage('أدخل قيمة المدفوع بشكل صحيح.');
+      return;
+    }
+    const total = multiplyMoney(quantity, unitCost);
+    if (paidAmount > total) {
+      setMessage(`المدفوع لا يمكن أن يتجاوز إجمالي التوريد (${formatMoney(total)}).`);
       return;
     }
 
