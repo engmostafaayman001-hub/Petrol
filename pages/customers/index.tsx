@@ -109,6 +109,7 @@ export default function CustomersPage() {
     const data = await response.json();
     if (!response.ok) return setMessage(data.error || "تعذر تعطيل العميل.");
     setMessage("تم حذف العميل نهائيًا.");
+    if (selected?.id === customer.id) setSelected(null);
     load();
   }
   async function view(customer: Customer) {
@@ -287,6 +288,7 @@ export default function CustomersPage() {
                 <div className="no-print flex gap-2">
                   <button type="button" className="ui-button secondary" onClick={openSaleForm}>إضافة عملية بيع</button>
                   <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
+                  {isManager && <><button type="button" className="ui-button secondary" onClick={() => { const customer = selected; setSelected(null); edit(customer); }}>تعديل العميل</button><button type="button" className="ui-button danger" onClick={() => remove(selected)}>حذف العميل</button></>}
                   <button className="modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>
               </header>

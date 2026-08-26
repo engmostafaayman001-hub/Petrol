@@ -112,6 +112,7 @@ export default function SuppliersPage() {
     const data = await response.json();
     if (!response.ok) return setMessage(data.error || "تعذر تعطيل المورد.");
     setMessage("تم حذف المورد نهائيًا.");
+    if (selected?.id === supplier.id) setSelected(null);
     load();
   }
   async function view(supplier: Supplier) {
@@ -264,6 +265,7 @@ export default function SuppliersPage() {
                 </div>
                 <div className="no-print flex gap-2">
                   <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
+                  {isManager && <><button type="button" className="ui-button secondary" onClick={() => { const supplier = selected; setSelected(null); edit(supplier); }}>تعديل المورد</button><button type="button" className="ui-button danger" onClick={() => remove(selected)}>حذف المورد</button></>}
                   <button className="modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>
               </header>
