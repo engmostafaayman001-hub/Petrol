@@ -34,6 +34,11 @@ type SupplierSummary = {
   total_due: number;
 };
 const money = (value: number) => formatMoneyValue(value);
+const transactionLabel = (type: string) => ({
+  delivery: "توريد آجل",
+  supplier_payment: "دفعة للمورد",
+  adjustment: "تسوية حساب",
+}[type] || "حركة حساب");
 export default function SuppliersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
@@ -95,11 +100,13 @@ export default function SuppliersPage() {
     load();
   }
   function edit(supplier: Supplier) {
+    if (!isManager) return;
     setEditing(supplier);
     setForm({ name: supplier.name, code: supplier.code, contact_name: supplier.contact_name || "", contact_phone: supplier.contact_phone || "", notes: supplier.notes || "" });
     setFormOpen(true);
   }
   async function remove(supplier: Supplier) {
+    if (!isManager) return;
     if (!window.confirm("هل أنت متأكد من حذف هذا المورد نهائيًا؟ لا يمكن حذفه إذا كان مرتبطًا بتوريدات أو مدفوعات.")) return;
     const response = await fetch("/api/suppliers", { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ station_id: stationId, id: supplier.id }) });
     const data = await response.json();
@@ -152,9 +159,7 @@ export default function SuppliersPage() {
           eyebrow="الحسابات"
           title="الموردون"
           description="حساب موحد لكل مورد مع حركة التوريدات والمدفوعات."
-          actions={
-            <Button onClick={() => setFormOpen(true)}>إضافة مورد</Button>
-          }
+          actions={isManager ? <Button onClick={() => setFormOpen(true)}>إضافة مورد</Button> : undefined}
         />
         {message && <p className="form-error">{message}</p>}
         <div className="account-cards">
@@ -273,7 +278,7 @@ export default function SuppliersPage() {
                   transactions.map((entry) => (
                     <div key={entry.id}>
                       <span>
-                        {entry.business_date} · {entry.transaction_type}
+                        {entry.business_date} · {transactionLabel(entry.transaction_type)}
                       </span>
                       <b>{money(entry.credit - entry.debit)}</b>
                     </div>

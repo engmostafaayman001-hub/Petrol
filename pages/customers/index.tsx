@@ -29,6 +29,11 @@ type Transaction = {
   notes?: string | null;
 };
 const money = (value: number) => formatMoneyValue(value);
+const transactionLabel = (type: string) => ({
+  sale: "بيع آجل",
+  customer_payment: "تحصيل من العميل",
+  adjustment: "تسوية حساب",
+}[type] || "حركة حساب");
 export default function CustomersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
@@ -92,11 +97,13 @@ export default function CustomersPage() {
     load();
   }
   function edit(customer: Customer) {
+    if (!isManager) return;
     setEditing(customer);
     setForm({ name: customer.name, phone: customer.phone || "", email: customer.email || "", address: customer.address || "", notes: "" });
     setFormOpen(true);
   }
   async function remove(customer: Customer) {
+    if (!isManager) return;
     if (!window.confirm("هل أنت متأكد من حذف هذا العميل نهائيًا؟ لا يمكن حذفه إذا كان مرتبطًا بمبيعات أو تحصيلات.")) return;
     const response = await fetch("/api/customers", { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ station_id: stationId, id: customer.id }) });
     const data = await response.json();
@@ -181,9 +188,7 @@ export default function CustomersPage() {
           eyebrow="الحسابات"
           title="العملاء والشركات"
           description="حساب موحد لكل شركة مع كشف حركة وتحصيلات."
-          actions={
-            <Button onClick={() => setFormOpen(true)}>إضافة عميل</Button>
-          }
+          actions={isManager ? <Button onClick={() => setFormOpen(true)}>إضافة عميل</Button> : undefined}
         />
         {message && <p className="form-error">{message}</p>}
         <div className="account-cards">
@@ -296,7 +301,7 @@ export default function CustomersPage() {
                   transactions.map((entry) => (
                     <div key={entry.id}>
                       <span>
-                        {entry.business_date} · {entry.transaction_type}
+                        {entry.business_date} · {transactionLabel(entry.transaction_type)}
                       </span>
                       <b className={entry.debit > 0 ? "text-red-600" : "text-green-600"}>{entry.debit > 0 ? money(entry.debit) : `- ${money(entry.credit)}`}</b>
                     </div>
