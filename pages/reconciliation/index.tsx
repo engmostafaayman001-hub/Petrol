@@ -5,7 +5,7 @@ import {
   ErrorState,
   LoadingState,
 } from "../../src/components/DataState";
-import { useRequireAuth } from "../../src/lib/auth";
+import { useRequireAuth, useRole } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 
@@ -57,11 +57,17 @@ const dateInCairo = () =>
 function SessionMeterGrid({
   line,
   editable,
+  sessionId,
+  isManager,
+  onSaved,
   detailReadings,
   setDetailReadings,
 }: {
   line: any;
   editable: boolean;
+  sessionId: string;
+  isManager: boolean;
+  onSaved: () => void;
   detailReadings: Record<string, string>;
   setDetailReadings: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
@@ -69,15 +75,35 @@ function SessionMeterGrid({
     line.meter_id && { meter_id: line.meter_id, reading_number: 1, opening_reading: line.opening_meter, closing_reading: line.closing_meter, meter_code: line.meter_code, meter_name: line.meter_name },
     line.meter2_id && { meter_id: line.meter2_id, reading_number: 2, opening_reading: line.opening_meter2, closing_reading: line.closing_meter2, meter_code: line.meter2_code, meter_name: line.meter2_name },
   ].filter(Boolean);
-  return <div className="session-meter-grid">{readings.map((reading: any, index: number) => <div key={reading.meter_id}><b>قراءة العداد {reading.reading_number || index + 1}</b><span>{reading.meter_code || reading.meter_name || 'غير مرتبط'}</span><small>فتح: {reading.opening_reading ?? '—'} · الإغلاق: {reading.closing_reading ?? '—'} · الفرق: {reading.meter_sold_qty ?? '—'} لتر · القيمة: {reading.meter_value == null ? '—' : `${Number(reading.meter_value).toLocaleString('ar-EG')} ج.م`}</small>{editable && <input type="number" min={reading.opening_reading ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:${reading.reading_number || index + 1}`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:${reading.reading_number || index + 1}`]: event.target.value }))} />}</div>)}</div>;
+  const [editing, setEditing] = useState<any>(null);
+  const [newOpening, setNewOpening] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function saveOpening() {
+    if (!editing || !reason.trim() || !Number.isFinite(Number(newOpening))) return setError("القراءة الجديدة وسبب التعديل مطلوبان.");
+    setSaving(true); setError("");
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const response = await fetch("/api/reconciliation/opening", { method: "POST", headers: { "Content-Type": "application/json", ...(auth.session?.access_token ? { Authorization: `Bearer ${auth.session.access_token}` } : {}) }, body: JSON.stringify({ session_id: sessionId, meter_id: editing.meter_id, opening_reading: Number(newOpening), reason }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر تعديل قراءة البداية.");
+      setEditing(null); setReason(""); setNewOpening(""); onSaved();
+    } catch (reasonError: any) { setError(reasonError.message || "تعذر تعديل القراءة."); }
+    finally { setSaving(false); }
+  }
+  return <><div className="session-meter-grid">{readings.map((reading: any, index: number) => <div key={reading.meter_id}><b>قراءة العداد {reading.reading_number || index + 1}</b><span>{reading.meter_code || reading.meter_name || 'غير مرتبط'}</span>{reading.opening_adjusted_by_manager && <em className="status-badge status-warning">تم تعديلها بواسطة المدير</em>}<small>فتح: {reading.opening_reading ?? '—'} · الإغلاق: {reading.closing_reading ?? '—'} · الفرق: {reading.meter_sold_qty ?? '—'} لتر · القيمة: {reading.meter_value == null ? '—' : `${Number(reading.meter_value).toLocaleString('ar-EG')} ج.م`}</small>{isManager && editable && <button type="button" className="ui-button secondary mt-2" onClick={() => { setEditing(reading); setNewOpening(String(reading.opening_reading ?? "")); setError(""); }}>تعديل قراءة البداية</button>}{editable && <input type="number" min={reading.opening_reading ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:${reading.reading_number || index + 1}`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:${reading.reading_number || index + 1}`]: event.target.value }))} />}</div>)}</div>{editing && <div className="modal-backdrop" role="dialog" aria-modal="true"><section className="ui-card form-card modal-card form-grid" onMouseDown={(event) => event.stopPropagation()}><h3>تعديل قراءة العداد</h3><p>القراءة الحالية: {Number(editing.opening_reading).toLocaleString("ar-EG")}</p><div className="form-field"><label>القراءة الجديدة</label><input autoFocus type="number" min="0" step="0.001" value={newOpening} onChange={(event) => setNewOpening(event.target.value)} /></div><div className="form-field"><label>سبب التعديل</label><textarea required value={reason} onChange={(event) => setReason(event.target.value)} /></div><p className="text-amber-700">تعديل قراءة العداد سيؤثر على فرق العداد والمبيعات والتسوية والتقارير المرتبطة بهذه الجلسة.</p>{error && <p className="form-error">{error}</p>}<div className="form-actions"><button type="button" className="ui-button" disabled={saving} onClick={saveOpening}>{saving ? "جارٍ الحفظ…" : "تأكيد التعديل"}</button><button type="button" className="ui-button secondary" onClick={() => setEditing(null)}>إلغاء</button></div></section></div>}</>;
 }
 
 export default function ReconciliationIndex() {
   const { user } = useRequireAuth();
+  const { role } = useRole();
+  const isManager = role === "manager";
   const stationId = useCurrentStationId(user?.id ?? null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
+  const [previousOpenings, setPreviousOpenings] = useState<Record<string, number>>({});
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [selectedShift, setSelectedShift] = useState("");
   const [readings, setReadings] = useState<Record<string, string>>({});
@@ -122,6 +148,8 @@ export default function ReconciliationIndex() {
       setSelectedShift((current) => current || openData.shifts?.[0]?.id || "");
       setMeters(openData.meters || []);
       setTanks(openData.tanks || []);
+      setPreviousOpenings(openData.previous_openings || {});
+      setReadings(Object.fromEntries(Object.entries(openData.previous_openings || {}).map(([meterId, value]) => [meterId, String(value)])));
       setSessions(listData.sessions || []);
     } catch (reason: any) {
       setError(reason.message || "تعذر تحميل بيانات الوردية.");
@@ -168,10 +196,6 @@ export default function ReconciliationIndex() {
       )
     )
       return setMessage("أدخل قراءة بداية صحيحة لكل العدادات.");
-    const openingTanks = tanks.map((tank) => ({
-      tank_id: tank.tank_id,
-      reading: Number(tank.system_quantity || 0),
-    }));
     setOpening(true);
     try {
       const { data: auth } = await supabase.auth.getSession();
@@ -187,7 +211,6 @@ export default function ReconciliationIndex() {
           station_id: stationId,
           shift_id: selectedShift,
           opening_meters: openingMeters,
-          opening_tanks: openingTanks,
         }),
       });
       const data = await response.json();
@@ -345,7 +368,9 @@ export default function ReconciliationIndex() {
                         <label key={meter.id}>
                           قراءة العداد {index + 1}
                           <small>{meter.code}</small>
-                          <input
+                            <input
+                            readOnly={!isManager && previousOpenings[meter.id] !== undefined}
+                            aria-readonly={!isManager && previousOpenings[meter.id] !== undefined}
                             required
                             min="0"
                             step="0.001"
@@ -357,8 +382,9 @@ export default function ReconciliationIndex() {
                                 [meter.id]: event.target.value,
                               }))
                             }
-                            placeholder="قراءة البداية"
+                            placeholder={isManager ? "قراءة البداية" : "قراءة تلقائية من إغلاق الجلسة السابقة"}
                           />
+                          <small>{previousOpenings[meter.id] !== undefined ? "قراءة تلقائية من إغلاق الجلسة السابقة" : "أول جلسة: أدخل القراءة يدويًا"}{!isManager && previousOpenings[meter.id] !== undefined ? " 🔒" : ""}</small>
                         </label>
                       ))}
                     </div>
@@ -489,7 +515,7 @@ export default function ReconciliationIndex() {
                 <article><small>قيمة فرق العدادات</small><b>{Number(detailLines.reduce((total, line) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_value || 0), 0), 0)).toLocaleString('ar-EG')} ج.م</b><em>بسعر الجلسة المحفوظ</em></article>
               </div>
               <section className="session-detail-section"><h4>التسوية والمخزون حسب الخزان</h4><div className="table-scroll"><table className="data-table"><thead><tr><th>الخزان</th><th>الرصيد الافتتاحي</th><th>التوريدات</th><th>المبيعات</th><th>الرصيد النظري</th><th>الرصيد الفعلي</th><th>فرق التسوية</th></tr></thead><tbody>{detailLines.map((line) => <tr key={line.id}><td>{line.tank_code} · {line.tank_name || line.fuel_name}</td><td>{Number(line.opening_qty ?? line.opening_tank_qty ?? 0).toLocaleString('ar-EG')} لتر</td><td>{Number(line.delivered_qty || 0).toLocaleString('ar-EG')} لتر</td><td>{Number(line.meter_sold_qty ?? line.sold_qty ?? 0).toLocaleString('ar-EG')} لتر</td><td>{Number(line.expected_closing_qty || 0).toLocaleString('ar-EG')} لتر</td><td>{line.actual_closing_qty == null ? '—' : `${Number(line.actual_closing_qty).toLocaleString('ar-EG')} لتر`}</td><td>{line.variance_qty == null ? '—' : `${Number(line.variance_qty).toLocaleString('ar-EG')} لتر`}</td></tr>)}</tbody></table></div></section>
-              <div className="session-detail-lines">{detailLines.map((line) => <article className="session-detail-line" key={line.id}><header><b>{line.tank_code} · {line.tank_name || line.fuel_name}</b><span>{line.fuel_name || 'وقود'}</span></header><SessionMeterGrid line={line} editable={detailsSession.status === 'open'} detailReadings={detailReadings} setDetailReadings={setDetailReadings} /><footer>الافتتاح: {line.opening_tank_qty ?? '—'} لتر · التوريد: {line.delivered_qty ?? '—'} لتر · البيع: {line.sold_qty ?? '—'} لتر · المتوقع: {line.expected_closing_qty ?? '—'} لتر · الفعلي: {line.actual_closing_qty ?? '—'} لتر · الفرق: {line.variance_qty ?? '—'} لتر</footer></article>)}</div>
+              <div className="session-detail-lines">{detailLines.map((line) => <article className="session-detail-line" key={line.id}><header><b>{line.tank_code} · {line.tank_name || line.fuel_name}</b><span>{line.fuel_name || 'وقود'}</span></header><SessionMeterGrid line={line} editable={detailsSession.status === 'open'} sessionId={detailsSession.id} isManager={isManager} onSaved={() => showSessionDetails(detailsSession)} detailReadings={detailReadings} setDetailReadings={setDetailReadings} /><footer>الافتتاح: {line.opening_tank_qty ?? '—'} لتر · التوريد: {line.delivered_qty ?? '—'} لتر · البيع: {line.sold_qty ?? '—'} لتر · المتوقع: {line.expected_closing_qty ?? '—'} لتر · الفعلي: {line.actual_closing_qty ?? '—'} لتر · الفرق: {line.variance_qty ?? '—'} لتر</footer></article>)}</div>
               <section className="session-operations-modal"><h4>تفاصيل عمليات الجلسة</h4>{detailOperations.length ? <div className="table-wrap"><table><thead><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>الكمية</th><th>القيمة</th><th>الحساب</th></tr></thead><tbody>{detailOperations.map((operation: any) => <tr key={`${operation.type}-${operation.id}`}><td>{operation.occurred_at ? new Date(operation.occurred_at).toLocaleString('ar-EG') : '—'}</td><td>{operation.type === 'sale' ? 'بيع' : operation.type === 'delivery' ? 'توريد' : operation.type === 'customer_payment' ? 'تحصيل عميل' : operation.type === 'supplier_payment' ? 'دفع مورد' : 'خدمة'}</td><td>{operation.detail || '—'}</td><td>{operation.quantity ? `${Number(operation.quantity).toLocaleString('ar-EG')} لتر` : '—'}</td><td>{Number(operation.value || 0).toLocaleString('ar-EG')} ج.م</td><td>{operation.account || '—'}</td></tr>)}</tbody></table></div> : <p>لا توجد عمليات مسجلة لهذه الجلسة.</p>}</section>
               {detailsSession.status === 'open' && <><button className="ui-button mt-4" disabled={savingDetailReadings} onClick={saveDetailReadings}>{savingDetailReadings ? 'جارٍ حفظ القراءات...' : 'حفظ قراءات العدادات'}</button><button className="ui-button secondary mt-4 mr-2" onClick={() => { window.location.href = `/reconciliation/session?sessionId=${detailsSession.id}`; }}>فتح شاشة الإغلاق الكاملة</button></>}
             </>}

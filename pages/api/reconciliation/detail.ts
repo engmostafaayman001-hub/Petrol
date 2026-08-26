@@ -49,6 +49,11 @@ export default async function handler(
       .order("reading_number", { ascending: true });
     if (storedReadingsError && !/does not exist/i.test(storedReadingsError.message))
       return res.status(500).json({ error: storedReadingsError.message });
+    const readingIds = (storedReadings || []).map((reading: any) => String(reading.id));
+    const { data: openingAudits } = readingIds.length
+      ? await supabase.from("audit_logs").select("entity_id,actor_id,created_at,reason").eq("entity", "reconciliation_meter_readings").in("entity_id", readingIds).contains("changed_fields", ["opening_reading"])
+      : { data: [] };
+    const openingAuditByReading = new Map((openingAudits || []).map((audit: any) => [audit.entity_id, audit]));
     const tankIds = (lines || []).map((line: any) => line.tank_id).filter(Boolean);
     const { data: tankMeters, error: tankMetersError } = tankIds.length
       ? await supabase.from("pump_meters").select("id,tank_id,code,name,meter_slot,is_active").in("tank_id", tankIds).eq("station_id", sessions.station_id).eq("is_active", true)
@@ -68,7 +73,7 @@ export default async function handler(
     const enrichedLines = (lines || []).map((line: any) => ({
       ...line,
       ...(meterLineMap.get(line.id) || {}),
-      meter_readings: (storedReadings || []).filter((reading: any) => reading.reconciliation_line_id === line.id).map((reading: any) => ({ ...reading, meter_code: meterMap.get(reading.meter_id)?.code || null, meter_name: meterMap.get(reading.meter_id)?.name || null })),
+      meter_readings: (storedReadings || []).filter((reading: any) => reading.reconciliation_line_id === line.id).map((reading: any) => ({ ...reading, meter_code: meterMap.get(reading.meter_id)?.code || null, meter_name: meterMap.get(reading.meter_id)?.name || null, opening_adjusted_by_manager: openingAuditByReading.has(String(reading.id)), opening_adjustment: openingAuditByReading.get(String(reading.id)) || null })),
       meter_id: line.meter_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 1)?.id || null,
       meter2_id: meterLineMap.get(line.id)?.meter2_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 2)?.id || null,
       meter_code: meterMap.get(line.meter_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 1)?.id)?.code || null,
