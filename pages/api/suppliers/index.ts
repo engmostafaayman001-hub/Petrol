@@ -15,10 +15,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!supplierId) return res.status(200).json({ suppliers: data || [] });
       const supplier = (data || []).find((item) => item.id === supplierId);
       if (!supplier) return res.status(404).json({ error: 'المورد غير موجود.' });
-      const { data: entries, error: entriesError } = await db.from('account_transactions').select('*').eq('station_id', stationId).eq('supplier_id', supplierId).order('business_date', { ascending: true }).order('created_at', { ascending: true });
+      const { data: entries, error: entriesError } = await db.from('account_transactions').select('id,transaction_type,debit,credit,amount,business_date,reference_id,created_at,notes').eq('station_id', stationId).eq('supplier_id', supplierId).order('business_date', { ascending: true }).order('created_at', { ascending: true });
       if (entriesError) throw entriesError;
-      const balance = (entries || []).reduce((total: number, entry: any) => total + Number(entry.credit || 0) - Number(entry.debit || 0), 0);
-      return res.status(200).json({ supplier, transactions: entries || [], balance });
+      const { data: deliveries, error: deliveriesError } = await db.from('deliveries').select('id,business_date,quantity,unit_cost,paid_amount,created_at').eq('station_id', stationId).eq('supplier_id', supplierId).eq('status', 'active').order('business_date', { ascending: true }).order('created_at', { ascending: true });
+      if (deliveriesError) throw deliveriesError;
+
+      // Older deliveries may predate the account trigger. Include their outstanding
+      // amount in the ledger response without duplicating entries posted by the trigger.
+      const postedDeliveryIds = new Set((entries || []).filter((entry: any) => entry.transaction_type === 'delivery' && entry.reference_id).map((entry: any) => entry.reference_id));
+      const missingDeliveryEntries = (deliveries || []).flatMap((delivery: any) => {
+        const due = Math.max(Number(delivery.quantity || 0) * Number(delivery.unit_cost || 0) - Number(delivery.paid_amount || 0), 0);
+        return !postedDeliveryIds.has(delivery.id) && due > 0 ? [{
+          id: `delivery-${delivery.id}`,
+          transaction_type: 'delivery',
+          debit: 0,
+          credit: due,
+          amount: due,
+          business_date: delivery.business_date,
+          reference_id: delivery.id,
+          created_at: delivery.created_at,
+          notes: 'توريد آجل',
+        }] : [];
+      });
+      const transactions = [...(entries || []), ...missingDeliveryEntries].sort((left: any, right: any) => `${left.business_date} ${left.created_at || ''}`.localeCompare(`${right.business_date} ${right.created_at || ''}`));
+      const totalSupplies = (deliveries || []).reduce((total: number, delivery: any) => total + Number(delivery.quantity || 0) * Number(delivery.unit_cost || 0), 0);
+      const paidWithDelivery = (deliveries || []).reduce((total: number, delivery: any) => total + Number(delivery.paid_amount || 0), 0);
+      const supplierPayments = (entries || []).filter((entry: any) => entry.transaction_type === 'supplier_payment').reduce((total: number, entry: any) => total + Number(entry.debit || 0), 0);
+      const totalPaid = paidWithDelivery + supplierPayments;
+      const balance = Math.max(totalSupplies - totalPaid, 0);
+      return res.status(200).json({ supplier, transactions, balance, summary: { operations: deliveries?.length || 0, total_supplies: totalSupplies, total_paid: totalPaid, total_due: balance } });
     }
     if (req.method === 'POST') {
       await requireStationManager(req, stationId);

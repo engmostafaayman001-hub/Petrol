@@ -27,6 +27,12 @@ type Transaction = {
   credit: number;
   business_date: string;
 };
+type SupplierSummary = {
+  operations: number;
+  total_supplies: number;
+  total_paid: number;
+  total_due: number;
+};
 const money = (value: number) => formatMoneyValue(value);
 export default function SuppliersPage() {
   const { user } = useRequireAuth();
@@ -37,6 +43,7 @@ export default function SuppliersPage() {
   const [selected, setSelected] = useState<Supplier | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [balance, setBalance] = useState(0);
+  const [summary, setSummary] = useState<SupplierSummary>({ operations: 0, total_supplies: 0, total_paid: 0, total_due: 0 });
   const [paymentAmount, setPaymentAmount] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
@@ -110,6 +117,7 @@ export default function SuppliersPage() {
       setSelected(supplier);
       setTransactions(data.transactions || []);
       setBalance(Number(data.balance || 0));
+      setSummary(data.summary || { operations: 0, total_supplies: 0, total_paid: 0, total_due: Number(data.balance || 0) });
     }
   }
   async function pay() {
@@ -247,13 +255,19 @@ export default function SuppliersPage() {
               <header className="section-card-header">
                 <div>
                   <h3>{selected.name}</h3>
-                  <p>الدين الحالي: {money(balance)}</p>
+                  <p>المتبقي للسداد: {money(summary.total_due)}</p>
                 </div>
                 <div className="no-print flex gap-2">
                   <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
                   <button className="modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>
               </header>
+              <div className="account-summary-grid">
+                <div><span>عدد التوريدات</span><b>{summary.operations}</b></div>
+                <div><span>إجمالي التوريد</span><b>{money(summary.total_supplies)}</b></div>
+                <div><span>إجمالي المدفوع</span><b>{money(summary.total_paid)}</b></div>
+                <div><span>المتبقي للسداد</span><b>{money(summary.total_due)}</b></div>
+              </div>
               <div className="account-ledger">
                 {transactions.length ? (
                   transactions.map((entry) => (

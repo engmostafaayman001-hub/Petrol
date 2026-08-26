@@ -13,6 +13,7 @@ type Snapshot = {
   services?: Array<{ amount?: number }>;
   by_fuel?: Array<{ fuel_name?: string; fuel_code?: string; sold_quantity?: number; delivered_quantity?: number; collected?: number; delivered_cost?: number; system_quantity?: number; capacity?: number }>;
   stock?: { total_system?: number; total_available?: number; total_capacity?: number };
+  tanks?: Tank[];
   today?: {
     sold?: number;
     delivered?: number;
@@ -77,7 +78,6 @@ export default function Dashboard() {
   const { role } = useRole();
   const [stationId, setStationId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [tanks, setTanks] = useState<Tank[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
@@ -111,7 +111,6 @@ export default function Dashboard() {
   const load = useCallback(async () => {
     if (!stationId) {
       setSnapshot(null);
-      setTanks([]);
       setState('ready');
       return;
     }
@@ -120,12 +119,9 @@ export default function Dashboard() {
     try {
       const { data: authData } = await supabase.auth.getSession();
       const headers: HeadersInit = authData.session?.access_token ? { Authorization: `Bearer ${authData.session.access_token}` } : {};
-      const [overview, inventory] = await Promise.all([
-        fetch(`/api/station/snapshot?stationId=${encodeURIComponent(stationId)}`, { headers }),
-        fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`, { headers }),
-      ]);
+      const overview = await fetch(`/api/station/snapshot?stationId=${encodeURIComponent(stationId)}`, { headers });
 
-      const [a, b] = await Promise.all([overview.json().catch(() => ({})), inventory.json().catch(() => ({}))]);
+      const a = await overview.json().catch(() => ({}));
 
       if (overview.ok) {
         setSnapshot((a?.snapshot as Snapshot | null) ?? null);
@@ -133,16 +129,9 @@ export default function Dashboard() {
         setSnapshot(null);
       }
 
-      if (inventory.ok) {
-        setTanks(Array.isArray(b?.tanks) ? b.tanks : []);
-      } else {
-        setTanks([]);
-      }
-
       setState('ready');
     } catch {
       setSnapshot(null);
-      setTanks([]);
       setState('error');
     }
   }, [stationId]);
@@ -160,9 +149,9 @@ export default function Dashboard() {
   };
 
   const totalSystemStock = useMemo(() => {
-    const fromTanks = sumTankStock(tanks);
+    const fromTanks = sumTankStock(safeSnapshot.tanks || []);
     return fromTanks || number(safeSnapshot.stock?.total_system ?? 0);
-  }, [tanks, safeSnapshot.stock?.total_system]);
+  }, [safeSnapshot.tanks, safeSnapshot.stock?.total_system]);
 
   const chartPoints = useMemo(() => {
     const source = snapshot?.by_fuel && snapshot.by_fuel.length > 0 ? snapshot.by_fuel : [];
@@ -179,7 +168,7 @@ export default function Dashboard() {
   const fuelCards = useMemo(() => {
     const map = new Map<string, { name: string; quantity: number; capacity: number; percent: number }>();
 
-    for (const tank of tanks) {
+    for (const tank of safeSnapshot.tanks || []) {
       const name = tank.fuel_name || tank.fuel_type || tank.tank_code || 'وقود';
       const key = tank.fuel_type_id || name;
       const quantity = number((tank as any).system_quantity ?? (tank as any).current_qty ?? (tank as any).current_stock ?? (tank as any).available_quantity ?? 0);
@@ -200,7 +189,7 @@ export default function Dashboard() {
     }
 
     return grouped.sort((a, b) => b.quantity - a.quantity);
-  }, [tanks, safeSnapshot]);
+  }, [safeSnapshot.tanks]);
 
   const stockRingGradient = useMemo(() => {
     const total = fuelCards.reduce((sum, fuel) => sum + fuel.quantity, 0);

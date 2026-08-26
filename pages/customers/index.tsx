@@ -73,16 +73,6 @@ export default function CustomersPage() {
   useEffect(() => {
     load();
   }, [stationId]);
-  useEffect(() => {
-    if (!stationId) return;
-    const currentStationId = stationId;
-    async function loadTanks() {
-      const response = await fetch(`/api/tanks?stationId=${encodeURIComponent(currentStationId)}`, { headers: { Authorization: `Bearer ${await token()}` } });
-      const data = await response.json();
-      if (response.ok) setTanks(data.tanks || []);
-    }
-    loadTanks().catch(() => setTanks([]));
-  }, [stationId]);
   async function save(event: React.FormEvent) {
     event.preventDefault();
     const response = await fetch("/api/customers", {
@@ -141,6 +131,14 @@ export default function CustomersPage() {
     setSaleForm({ tank_id: "", quantity: "", paid_amount: "", business_date: new Date().toISOString().slice(0, 10), driver_name: "", vehicle_number: "" });
     setMessage("تم تسجيل عملية البيع.");
     view(selected);
+  }
+  async function openSaleForm() {
+    if (!stationId) return;
+    const response = await fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`, { headers: { Authorization: `Bearer ${await token()}` } });
+    const data = await response.json();
+    if (!response.ok) return setMessage(data.error || "تعذر تحميل الخزانات.");
+    setTanks(data.tanks || []);
+    setSaleFormOpen(true);
   }
   async function collect() {
     const amount = parseNumericInput(paymentAmount);
@@ -282,7 +280,7 @@ export default function CustomersPage() {
                   <p>المتبقي للتحصيل: {money(summary.total_due)}</p>
                 </div>
                 <div className="no-print flex gap-2">
-                  <button type="button" className="ui-button secondary" onClick={() => setSaleFormOpen(true)}>إضافة عملية بيع</button>
+                  <button type="button" className="ui-button secondary" onClick={openSaleForm}>إضافة عملية بيع</button>
                   <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
                   <button className="modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>

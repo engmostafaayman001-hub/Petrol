@@ -55,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const [tankResult, expenseResult, meterResult, paymentResult] = await Promise.all([
       supabase
         .from('v_tank_status')
-        .select('system_quantity,available_quantity,capacity')
+        .select('tank_id,fuel_type_id,tank_code,fuel_name,system_quantity,available_quantity,capacity')
         .eq('station_id', stationId)
         .eq('is_active', true),
       current.session?.id
@@ -114,6 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total_available: tankAvailable,
         total_capacity: tankCapacity,
       },
+      tanks: tankResult.data ?? [],
       today: {
         sold,
         delivered,

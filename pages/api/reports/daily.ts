@@ -302,16 +302,13 @@ export default async function handler(
       ? await supabase.from("reconciliation_meter_readings").select("id,session_id,reconciliation_line_id,meter_id,reading_number,opening_reading,closing_reading,meter_sold_qty,unit_price,meter_value").in("session_id", reportSessionIds).order("recorded_at", { ascending: false })
       : { data: [], error: null };
     if (meterReadingsResult.error && !/does not exist/i.test(meterReadingsResult.error.message)) return res.status(500).json({ error: meterReadingsResult.error.message });
-    const sessionSummaryResults = await Promise.all(
-      reportSessionIds.map((id: string) => supabase.rpc("fn_session_sales_summary", { p_session_id: id })),
-    );
-    if (sessionSummaryResults.some((result: any) => result.error)) {
-      const summaryError = sessionSummaryResults.find((result: any) => result.error)?.error;
-      return res.status(500).json({ error: summaryError?.message || "تعذر حساب ملخص مبيعات الجلسة." });
-    }
-    const sessionSummaries = sessionSummaryResults.map((result: any, index: number) => ({
-      session_id: reportSessionIds[index],
-      ...(result.data || {}),
+    const { data: sessionSummaryData, error: sessionSummaryError } = reportSessionIds.length
+      ? await supabase.rpc("fn_session_sales_summaries", { p_session_ids: reportSessionIds })
+      : { data: [], error: null };
+    if (sessionSummaryError) return res.status(500).json({ error: sessionSummaryError.message || "تعذر حساب ملخص مبيعات الجلسة." });
+    const sessionSummaries = (sessionSummaryData || []).map((item: any) => ({
+      session_id: item.session_id,
+      ...(item.summary || {}),
     }));
     const summaryTotals = sessionSummaries.reduce((total: any, summary: any) => ({
       meterQuantity: total.meterQuantity + Number(summary.meterQuantity || 0),
