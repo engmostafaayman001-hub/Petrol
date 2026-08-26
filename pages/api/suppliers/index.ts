@@ -12,7 +12,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const supplierId = String(req.query.supplierId || '').trim();
       const { data, error } = await db.from('suppliers').select('id,code,name,contact_name,contact_phone,notes,is_active').eq('station_id', stationId).eq('is_active', true).order('name');
       if (error) throw error;
-      if (!supplierId) return res.status(200).json({ suppliers: data || [] });
+      if (!supplierId) {
+        const supplierIds = (data || []).map((supplier: any) => supplier.id);
+        if (!supplierIds.length) return res.status(200).json({ suppliers: [] });
+        const [{ data: deliveries, error: deliveriesError }, { data: payments, error: paymentsError }] = await Promise.all([
+          db.from('deliveries').select('supplier_id,quantity,unit_cost,paid_amount').eq('station_id', stationId).eq('status', 'active').in('supplier_id', supplierIds),
+          db.from('account_transactions').select('supplier_id,debit').eq('station_id', stationId).eq('transaction_type', 'supplier_payment').in('supplier_id', supplierIds),
+        ]);
+        if (deliveriesError || paymentsError) throw deliveriesError || paymentsError;
+        const summaries = new Map<string, { supply_count: number; total_supplies: number; total_paid: number }>();
+        for (const delivery of deliveries || []) {
+          const summary = summaries.get(delivery.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0 };
+          summary.supply_count += 1;
+          summary.total_supplies += Number(delivery.quantity || 0) * Number(delivery.unit_cost || 0);
+          summary.total_paid += Number(delivery.paid_amount || 0);
+          summaries.set(delivery.supplier_id, summary);
+        }
+        for (const payment of payments || []) {
+          const summary = summaries.get(payment.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0 };
+          summary.total_paid += Number(payment.debit || 0);
+          summaries.set(payment.supplier_id, summary);
+        }
+        return res.status(200).json({ suppliers: (data || []).map((supplier: any) => {
+          const summary = summaries.get(supplier.id) || { supply_count: 0, total_supplies: 0, total_paid: 0 };
+          return { ...supplier, ...summary, total_due: Math.max(summary.total_supplies - summary.total_paid, 0) };
+        }) });
+      }
       const supplier = (data || []).find((item) => item.id === supplierId);
       if (!supplier) return res.status(404).json({ error: 'المورد غير موجود.' });
       const { data: entries, error: entriesError } = await db.from('account_transactions').select('id,transaction_type,debit,credit,amount,business_date,reference_id,created_at,notes').eq('station_id', stationId).eq('supplier_id', supplierId).order('business_date', { ascending: true }).order('created_at', { ascending: true });

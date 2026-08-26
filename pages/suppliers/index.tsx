@@ -19,6 +19,10 @@ type Supplier = {
   contact_name?: string | null;
   contact_phone?: string | null;
   notes?: string | null;
+  supply_count?: number;
+  total_supplies?: number;
+  total_paid?: number;
+  total_due?: number;
 };
 type Transaction = {
   id: string;
@@ -26,6 +30,7 @@ type Transaction = {
   debit: number;
   credit: number;
   business_date: string;
+  reference_id?: string | null;
 };
 type SupplierSummary = {
   operations: number;
@@ -153,6 +158,28 @@ export default function SuppliersPage() {
     setMessage("تم تسجيل الدفع للمورد.");
     view(selected);
   }
+  async function manageAccountEntry(entry: Transaction, action: 'edit' | 'delete') {
+    if (!isManager || !selected) return;
+    const isPayment = entry.transaction_type === 'supplier_payment';
+    const sourceId = entry.reference_id;
+    if (!isPayment && (entry.transaction_type !== 'delivery' || !sourceId)) return setMessage('لا يمكن تعديل هذه الحركة من كشف الحساب.');
+    if (action === 'delete' && !window.confirm('هل تريد إلغاء هذه الحركة؟')) return;
+    let response: Response;
+    if (isPayment) {
+      const amount = action === 'edit' ? window.prompt('مبلغ الدفعة الجديد', String(entry.debit || 0)) : null;
+      if (action === 'edit' && (!amount || Number(amount) <= 0)) return;
+      response = await fetch(`/api/accounts/payment?id=${encodeURIComponent(entry.id)}&stationId=${encodeURIComponent(stationId || '')}`, { method: action === 'edit' ? 'PATCH' : 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await token()}` }, body: action === 'edit' ? JSON.stringify({ station_id: stationId, amount }) : JSON.stringify({ station_id: stationId }) });
+    } else {
+      const quantity = action === 'edit' ? window.prompt('كمية التوريد الجديدة باللتر') : null;
+      const reason = window.prompt('سبب التعديل أو الإلغاء') || '';
+      if (action === 'edit' && (!quantity || Number(quantity) <= 0)) return;
+      response = await fetch(`/api/deliveries/manage?id=${encodeURIComponent(sourceId || '')}`, { method: action === 'edit' ? 'PATCH' : 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await token()}` }, body: JSON.stringify(action === 'edit' ? { reason, payload: { quantity: Number(quantity) } } : { reason }) });
+    }
+    const data = await response.json();
+    if (!response.ok) return setMessage(data.error || 'تعذر تعديل حركة الحساب.');
+    setMessage(action === 'edit' ? 'تم تعديل الحركة.' : 'تم إلغاء الحركة.');
+    view(selected);
+  }
   return (
     <PageLayout title="الموردون">
       <main className="accounts-page" dir="rtl">
@@ -173,7 +200,12 @@ export default function SuppliersPage() {
                 </div>
                 <StatusBadge tone="info">مورد</StatusBadge>
               </header>
-              <strong>حساب المورد</strong>
+              <div className="account-summary-grid">
+                <div><span>عدد التوريدات</span><b>{supplier.supply_count || 0}</b></div>
+                <div><span>إجمالي التوريد</span><b>{money(Number(supplier.total_supplies || 0))}</b></div>
+                <div><span>المدفوع</span><b>{money(Number(supplier.total_paid || 0))}</b></div>
+                <div><span>المتبقي</span><b>{money(Number(supplier.total_due || 0))}</b></div>
+              </div>
               <div className="flex gap-2 flex-wrap">
               <button
                 className="ui-button secondary"
@@ -265,7 +297,6 @@ export default function SuppliersPage() {
                 </div>
                 <div className="no-print flex gap-2">
                   <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
-                  {isManager && <><button type="button" className="ui-button secondary" onClick={() => { const supplier = selected; setSelected(null); edit(supplier); }}>تعديل المورد</button><button type="button" className="ui-button danger" onClick={() => remove(selected)}>حذف المورد</button></>}
                   <button className="modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>
               </header>
@@ -282,7 +313,7 @@ export default function SuppliersPage() {
                       <span>
                         {entry.business_date} · {transactionLabel(entry.transaction_type)}
                       </span>
-                      <b>{money(entry.credit - entry.debit)}</b>
+                      <span className="flex items-center gap-2"><b>{money(entry.credit - entry.debit)}</b>{isManager && ['delivery', 'supplier_payment'].includes(entry.transaction_type) && <><button type="button" className="text-blue-700" onClick={() => manageAccountEntry(entry, 'edit')}>تعديل</button><button type="button" className="text-red-700" onClick={() => manageAccountEntry(entry, 'delete')}>حذف</button></>}</span>
                     </div>
                   ))
                 ) : (

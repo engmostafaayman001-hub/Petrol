@@ -27,6 +27,7 @@ type Transaction = {
   amount: number;
   business_date: string;
   notes?: string | null;
+  reference_id?: string | null;
 };
 const money = (value: number) => formatMoneyValue(value);
 const transactionLabel = (type: string) => ({
@@ -176,6 +177,28 @@ export default function CustomersPage() {
     setMessage("تم تسجيل التحصيل.");
     view(selected);
   }
+  async function manageAccountEntry(entry: Transaction, action: 'edit' | 'delete') {
+    if (!isManager || !selected) return;
+    const isPayment = entry.transaction_type === 'customer_payment';
+    const sourceId = entry.reference_id;
+    if (!isPayment && (entry.transaction_type !== 'sale' || !sourceId)) return setMessage('لا يمكن تعديل هذه الحركة من كشف الحساب.');
+    if (action === 'delete' && !window.confirm('هل تريد إلغاء هذه الحركة؟')) return;
+    let response: Response;
+    if (isPayment) {
+      const amount = action === 'edit' ? window.prompt('مبلغ التحصيل الجديد', String(entry.credit || entry.amount || 0)) : null;
+      if (action === 'edit' && (!amount || Number(amount) <= 0)) return;
+      response = await fetch(`/api/accounts/payment?id=${encodeURIComponent(entry.id)}&stationId=${encodeURIComponent(stationId || '')}`, { method: action === 'edit' ? 'PATCH' : 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await token()}` }, body: action === 'edit' ? JSON.stringify({ station_id: stationId, amount }) : JSON.stringify({ station_id: stationId }) });
+    } else {
+      const quantity = action === 'edit' ? window.prompt('الكمية الجديدة باللتر') : null;
+      const reason = window.prompt('سبب التعديل أو الإلغاء') || '';
+      if (action === 'edit' && (!quantity || Number(quantity) <= 0)) return;
+      response = await fetch(`/api/sales/manage?id=${encodeURIComponent(sourceId || '')}`, { method: action === 'edit' ? 'PATCH' : 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await token()}` }, body: JSON.stringify(action === 'edit' ? { reason, payload: { quantity: Number(quantity) } } : { reason }) });
+    }
+    const data = await response.json();
+    if (!response.ok) return setMessage(data.error || 'تعذر تعديل حركة الحساب.');
+    setMessage(action === 'edit' ? 'تم تعديل الحركة.' : 'تم إلغاء الحركة.');
+    view(selected);
+  }
   const selectedSaleTank = tanks.find((tank) => tank.tank_id === saleForm.tank_id);
   const saleUnitPrice = Number(selectedSaleTank?.selling_price || 0);
   const saleQuantity = parseNumericInput(saleForm.quantity) || 0;
@@ -288,7 +311,6 @@ export default function CustomersPage() {
                 <div className="no-print flex gap-2">
                   <button type="button" className="ui-button secondary" onClick={openSaleForm}>إضافة عملية بيع</button>
                   <button type="button" className="ui-button secondary" onClick={printDetails}>طباعة</button>
-                  {isManager && <><button type="button" className="ui-button secondary" onClick={() => { const customer = selected; setSelected(null); edit(customer); }}>تعديل العميل</button><button type="button" className="ui-button danger" onClick={() => remove(selected)}>حذف العميل</button></>}
                   <button className="modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>
               </header>
@@ -305,7 +327,7 @@ export default function CustomersPage() {
                       <span>
                         {entry.business_date} · {transactionLabel(entry.transaction_type)}
                       </span>
-                      <b className={entry.debit > 0 ? "text-red-600" : "text-green-600"}>{entry.debit > 0 ? money(entry.debit) : `- ${money(entry.credit)}`}</b>
+                      <span className="flex items-center gap-2"><b className={entry.debit > 0 ? "text-red-600" : "text-green-600"}>{entry.debit > 0 ? money(entry.debit) : `- ${money(entry.credit)}`}</b>{isManager && ['sale', 'customer_payment'].includes(entry.transaction_type) && <><button type="button" className="text-blue-700" onClick={() => manageAccountEntry(entry, 'edit')}>تعديل</button><button type="button" className="text-red-700" onClick={() => manageAccountEntry(entry, 'delete')}>حذف</button></>}</span>
                     </div>
                   ))
                 ) : (
