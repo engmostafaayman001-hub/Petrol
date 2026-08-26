@@ -49,6 +49,12 @@ export default async function handler(
       .order("reading_number", { ascending: true });
     if (storedReadingsError && !/does not exist/i.test(storedReadingsError.message))
       return res.status(500).json({ error: storedReadingsError.message });
+    const { data: inventoryDeductions, error: inventoryDeductionsError } = await supabase
+      .from("reconciliation_inventory_deductions")
+      .select("session_id,meter_id,tank_id,quantity,status,inventory_txn_id,reason,applied_at")
+      .eq("session_id", sessionId);
+    if (inventoryDeductionsError && !/does not exist/i.test(inventoryDeductionsError.message)) return res.status(500).json({ error: inventoryDeductionsError.message });
+    const inventoryDeductionByMeter = new Map((inventoryDeductions || []).map((deduction: any) => [deduction.meter_id, deduction]));
     const readingIds = (storedReadings || []).map((reading: any) => String(reading.id));
     const { data: openingAudits } = readingIds.length
       ? await supabase.from("audit_logs").select("entity_id,actor_id,created_at,reason").eq("entity", "reconciliation_meter_readings").in("entity_id", readingIds).contains("changed_fields", ["opening_reading"])
@@ -73,7 +79,7 @@ export default async function handler(
     const enrichedLines = (lines || []).map((line: any) => ({
       ...line,
       ...(meterLineMap.get(line.id) || {}),
-      meter_readings: (storedReadings || []).filter((reading: any) => reading.reconciliation_line_id === line.id).map((reading: any) => ({ ...reading, meter_code: meterMap.get(reading.meter_id)?.code || null, meter_name: meterMap.get(reading.meter_id)?.name || null, opening_adjusted_by_manager: openingAuditByReading.has(String(reading.id)), opening_adjustment: openingAuditByReading.get(String(reading.id)) || null })),
+      meter_readings: (storedReadings || []).filter((reading: any) => reading.reconciliation_line_id === line.id).map((reading: any) => ({ ...reading, meter_code: meterMap.get(reading.meter_id)?.code || null, meter_name: meterMap.get(reading.meter_id)?.name || null, opening_adjusted_by_manager: openingAuditByReading.has(String(reading.id)), opening_adjustment: openingAuditByReading.get(String(reading.id)) || null, inventory_deduction: inventoryDeductionByMeter.get(reading.meter_id) || (line.writeoff_txn_id ? { status: "applied", inventory_txn_id: line.writeoff_txn_id, quantity: reading.meter_sold_qty } : null) })),
       meter_id: line.meter_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 1)?.id || null,
       meter2_id: meterLineMap.get(line.id)?.meter2_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 2)?.id || null,
       meter_code: meterMap.get(line.meter_id || metersByTank.get(line.tank_id)?.find((meter) => meter.meter_slot === 1)?.id)?.code || null,

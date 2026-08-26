@@ -58,7 +58,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.error('deliveries/create error', error);
       return res.status(400).json({ error: error.message });
     }
-    return res.status(201).json({ delivery: data?.[0] ?? null });
+    const delivery = data?.[0] ?? null;
+    const normalizedTotal = Math.round((quantity * unitCost + Number.EPSILON) * 100) / 100;
+    return res.status(201).json({ delivery: delivery ? { ...delivery, total_cost: normalizedTotal, paid_amount: paidAmount, remaining: Math.max(normalizedTotal - paidAmount, 0) } : null });
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error('deliveries/create exception', err);

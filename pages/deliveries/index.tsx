@@ -18,7 +18,10 @@ type Delivery = {
   fuel_name?: string;
   supplier_name?: string;
   quantity?: number;
+  unit_cost?: number;
+  paid_amount?: number;
   total_cost?: number;
+  remaining?: number;
 };
 export default function DeliveriesList() {
   const { user } = useRequireAuth();
@@ -165,6 +168,7 @@ export default function DeliveriesList() {
                 {filtered.map((row) => {
                   const total = Number(row.total_cost || 0);
                   const paid = Number(row.paid_amount || 0);
+                  const remaining = Number(row.remaining ?? Math.max(total - paid, 0));
                   return (
                     <tr key={row.id}>
                       <td>{row.reference_no || row.id.slice(0, 8)}</td>
@@ -172,7 +176,6 @@ export default function DeliveriesList() {
                       <td>
                         <b>{row.supplier_name || "غير مرتبط"}</b>
                       </td>
-                      {isManager && <td><button className="ui-button secondary" onClick={() => manageDelivery(row, "PATCH")}>تعديل</button> <button className="ui-button danger" onClick={() => manageDelivery(row, "DELETE")}>إلغاء</button></td>}
                       <td>{row.fuel_name || "—"}</td>
                       <td>{row.tank_code || "—"}</td>
                       <td>
@@ -182,7 +185,7 @@ export default function DeliveriesList() {
                       <td>{total.toLocaleString("ar-EG")} ج.م</td>
                       <td>{paid.toLocaleString("ar-EG")} ج.م</td>
                       <td>
-                        {Math.max(total - paid, 0).toLocaleString("ar-EG")} ج.م
+                        {remaining.toLocaleString("ar-EG")} ج.م
                       </td>
                       <td>
                         <button
@@ -192,6 +195,7 @@ export default function DeliveriesList() {
                           عرض
                         </button>
                       </td>
+                      {isManager && <td><button className="ui-button secondary" onClick={() => manageDelivery(row, "PATCH")}>تعديل</button> <button className="ui-button danger" onClick={() => manageDelivery(row, "DELETE")}>إلغاء</button></td>}
                     </tr>
                   );
                 })}
@@ -261,7 +265,7 @@ export default function DeliveriesList() {
               <div>
                 <dt>المتبقي</dt>
                 <dd className={Math.max(Number(selected.total_cost || 0) - Number(selected.paid_amount || 0), 0) > 0 ? "text-amber-700" : "text-emerald-700"}>
-                  {Math.max(Number(selected.total_cost || 0) - Number(selected.paid_amount || 0), 0).toLocaleString("ar-EG")} ج.م
+                  {Number(selected.remaining ?? Math.max(Number(selected.total_cost || 0) - Number(selected.paid_amount || 0), 0)).toLocaleString("ar-EG")} ج.م
                 </dd>
               </div>
               <div>
