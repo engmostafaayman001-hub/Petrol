@@ -15,27 +15,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!supplierId) {
         const supplierIds = (data || []).map((supplier: any) => supplier.id);
         if (!supplierIds.length) return res.status(200).json({ suppliers: [] });
-        const [{ data: deliveries, error: deliveriesError }, { data: payments, error: paymentsError }] = await Promise.all([
-          db.from('deliveries').select('supplier_id,quantity,unit_cost,paid_amount').eq('station_id', stationId).eq('status', 'active').in('supplier_id', supplierIds),
+        const [{ data: deliveries, error: deliveriesError }, { data: payments, error: paymentsError }, { data: fuelTypes, error: fuelTypesError }] = await Promise.all([
+          db.from('deliveries').select('supplier_id,fuel_type_id,quantity,unit_cost,paid_amount').eq('station_id', stationId).eq('status', 'active').in('supplier_id', supplierIds),
           db.from('account_transactions').select('supplier_id,debit').eq('station_id', stationId).eq('transaction_type', 'supplier_payment').in('supplier_id', supplierIds),
+          db.from('fuel_types').select('id,name,code').eq('station_id', stationId),
         ]);
-        if (deliveriesError || paymentsError) throw deliveriesError || paymentsError;
-        const summaries = new Map<string, { supply_count: number; total_supplies: number; total_paid: number }>();
+        if (deliveriesError || paymentsError || fuelTypesError) throw deliveriesError || paymentsError || fuelTypesError;
+        const fuelNames = new Map((fuelTypes || []).map((fuel: any) => [fuel.id, fuel.name || fuel.code]));
+        const summaries = new Map<string, { supply_count: number; total_supplies: number; total_paid: number; fuel_quantities: Map<string, number> }>();
         for (const delivery of deliveries || []) {
-          const summary = summaries.get(delivery.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0 };
+          const summary = summaries.get(delivery.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, number>() };
           summary.supply_count += 1;
           summary.total_supplies += Number(delivery.quantity || 0) * Number(delivery.unit_cost || 0);
           summary.total_paid += Number(delivery.paid_amount || 0);
+          const fuelName = fuelNames.get(delivery.fuel_type_id) || 'وقود غير محدد';
+          summary.fuel_quantities.set(fuelName, Number(summary.fuel_quantities.get(fuelName) || 0) + Number(delivery.quantity || 0));
           summaries.set(delivery.supplier_id, summary);
         }
         for (const payment of payments || []) {
-          const summary = summaries.get(payment.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0 };
+          const summary = summaries.get(payment.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, number>() };
           summary.total_paid += Number(payment.debit || 0);
           summaries.set(payment.supplier_id, summary);
         }
         return res.status(200).json({ suppliers: (data || []).map((supplier: any) => {
-          const summary = summaries.get(supplier.id) || { supply_count: 0, total_supplies: 0, total_paid: 0 };
-          return { ...supplier, ...summary, total_due: Math.max(summary.total_supplies - summary.total_paid, 0) };
+          const summary = summaries.get(supplier.id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, number>() };
+          return { ...supplier, supply_count: summary.supply_count, total_supplies: summary.total_supplies, total_paid: summary.total_paid, total_due: Math.max(summary.total_supplies - summary.total_paid, 0), fuel_breakdown: [...summary.fuel_quantities.entries()].map(([name, quantity]) => ({ name, quantity })) };
         }) });
       }
       const supplier = (data || []).find((item) => item.id === supplierId);

@@ -23,6 +23,7 @@ type Supplier = {
   total_supplies?: number;
   total_paid?: number;
   total_due?: number;
+  fuel_breakdown?: Array<{ name: string; quantity: number }>;
 };
 type Transaction = {
   id: string;
@@ -205,6 +206,10 @@ export default function SuppliersPage() {
                 <div><span>إجمالي التوريد</span><b>{money(Number(supplier.total_supplies || 0))}</b></div>
                 <div><span>المدفوع</span><b>{money(Number(supplier.total_paid || 0))}</b></div>
                 <div><span>المتبقي</span><b>{money(Number(supplier.total_due || 0))}</b></div>
+              </div>
+              <div className="text-sm text-[var(--text-muted)]">
+                <span className="block mb-1">أنواع الوقود الموردة</span>
+                {supplier.fuel_breakdown?.length ? <div className="flex flex-wrap gap-2">{supplier.fuel_breakdown.map((fuel) => <span key={fuel.name} className="status-badge">{fuel.name}: {Number(fuel.quantity || 0).toLocaleString('ar-EG')} لتر</span>)}</div> : <span>لا توجد توريدات مسجلة بعد.</span>}
               </div>
               <div className="flex gap-2 flex-wrap">
               <button
