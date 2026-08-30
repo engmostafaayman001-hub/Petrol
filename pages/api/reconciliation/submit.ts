@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import getServiceSupabase from '../../../src/lib/supabaseServer';
-import { requireStationOperator } from '../../../src/lib/reconciliationAuth';
+import { requireStationShiftManager } from '../../../src/lib/reconciliationAuth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!session) return res.status(404).json({ error: 'جلسة التسوية غير موجودة.' });
     if (session.status !== 'open') return res.status(409).json({ error: 'هذه الجلسة مغلقة بالفعل.' });
     let operator;
-    try { operator = await requireStationOperator(req, session.station_id); } catch (error: any) { return res.status(401).json({ error: error.message }); }
+    try { operator = await requireStationShiftManager(req, session.station_id); } catch (error: any) { return res.status(401).json({ error: error.message }); }
     const { data, error } = await supabase.rpc('fn_submit_reconciliation', { p_session_id: session_id, p_notes: null, p_operator_id: operator.id });
     if (error) {
       const status = error.code === '23514' ? 422 : 400;

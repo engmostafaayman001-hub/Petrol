@@ -35,3 +35,14 @@ export async function requireStationManager(req: NextApiRequest, stationId: stri
   if (profile?.role !== 'manager') throw new Error('هذا الإجراء متاح للمدير فقط.');
   return user;
 }
+
+export async function requireStationShiftManager(req: NextApiRequest, stationId: string) {
+  const user = await requireStationOperator(req, stationId);
+  const supabase = getServiceSupabase();
+  const { data: profile, error } = await supabase.from('profiles').select('role').eq('id', user.id).eq('station_id', stationId).eq('is_active', true).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!profile || !['manager', 'supervisor'].includes(profile.role)) {
+    throw new Error('هذا الإجراء متاح للمدير أو المشرف فقط.');
+  }
+  return user;
+}

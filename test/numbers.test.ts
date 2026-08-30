@@ -110,6 +110,13 @@ describe("numeric formatting and parsing", () => {
     expect(can("supervisor", "customer:manage")).toBe(true);
   });
 
+  it("allows supervisors to manage reconciliation open and close operations", () => {
+    expect(can("manager", "reconciliation:open")).toBe(true);
+    expect(can("manager", "reconciliation:close")).toBe(true);
+    expect(can("supervisor", "reconciliation:open")).toBe(true);
+    expect(can("supervisor", "reconciliation:close")).toBe(true);
+  });
+
   it("calculates customer internal transaction totals without fuel inventory logic", () => {
     expect(calculateCustomerInternalTransaction(10, 100, 50, 500)).toEqual({
       subtotal: 1000,
