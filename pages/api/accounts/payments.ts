@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const actor = await requireStationOperator(req, station_id);
     const db = getServiceSupabase();
     const { data: profile } = await db.from('profiles').select('role').eq('id', actor.id).eq('station_id', station_id).eq('is_active', true).maybeSingle();
-    if (!profile || profile.role !== 'manager') return res.status(403).json({ error: 'تسجيل التحصيل والدفعات متاح للمشرف فقط.' });
+    if (!profile || !['manager', 'supervisor'].includes(profile.role)) return res.status(403).json({ error: 'تسجيل التحصيلات ودفعات الموردين متاح للمدير أو المشرف.' });
     const isCustomer = account_type === 'customer';
     const accountId = isCustomer ? customer_id : supplier_id;
     const accountTable = isCustomer ? 'customers' : 'suppliers';
