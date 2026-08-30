@@ -11,6 +11,7 @@ import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 import { formatMoney as formatMoneyValue, parseNumericInput } from "../../src/core/numbers";
 import { printDetails } from "../../src/lib/printDetails";
+import { LoadingState } from "../../src/components/DataState";
 
 type Supplier = {
   id: string;
@@ -23,7 +24,7 @@ type Supplier = {
   total_supplies?: number;
   total_paid?: number;
   total_due?: number;
-  fuel_breakdown?: Array<{ name: string; quantity: number }>;
+  fuel_breakdown?: Array<{ name: string; code?: string | null; quantity: number }>;
 };
 type Transaction = {
   id: string;
@@ -49,6 +50,7 @@ export default function SuppliersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
   const { role } = useRole();
+  const canManageAccounts = role === "manager" || role === "supervisor";
   const isManager = role === "manager";
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selected, setSelected] = useState<Supplier | null>(null);
@@ -66,17 +68,18 @@ export default function SuppliersPage() {
     notes: "",
   });
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
   async function token() {
     return (await supabase.auth.getSession()).data.session?.access_token || "";
   }
   async function load() {
     if (!stationId) return;
-    const response = await fetch(
-      `/api/suppliers?stationId=${encodeURIComponent(stationId)}`,
-      { headers: { Authorization: `Bearer ${await token()}` } },
-    );
-    const data = await response.json();
-    if (response.ok) setSuppliers(data.suppliers || []);
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/suppliers?stationId=${encodeURIComponent(stationId)}`, { headers: { Authorization: `Bearer ${await token()}` } });
+      const data = await response.json();
+      if (response.ok) setSuppliers(data.suppliers || []); else setMessage(data.error || "تعذر تحميل الموردين.");
+    } finally { setLoading(false); }
   }
   useEffect(() => {
     load();
@@ -106,7 +109,7 @@ export default function SuppliersPage() {
     load();
   }
   function edit(supplier: Supplier) {
-    if (!isManager) return;
+    if (!canManageAccounts) return;
     setEditing(supplier);
     setForm({ name: supplier.name, code: supplier.code, contact_name: supplier.contact_name || "", contact_phone: supplier.contact_phone || "", notes: supplier.notes || "" });
     setFormOpen(true);
@@ -188,10 +191,10 @@ export default function SuppliersPage() {
           eyebrow="الحسابات"
           title="الموردون"
           description="حساب موحد لكل مورد مع حركة التوريدات والمدفوعات."
-          actions={isManager ? <Button onClick={() => setFormOpen(true)}>إضافة مورد</Button> : undefined}
+          actions={canManageAccounts ? <Button onClick={() => setFormOpen(true)}>إضافة مورد</Button> : undefined}
         />
         {message && <p className="form-error">{message}</p>}
-        <div className="account-cards">
+        {loading ? <LoadingState /> : <div className="account-cards">
           {suppliers.map((supplier) => (
             <article className="account-card" key={supplier.id}>
               <header>
@@ -209,7 +212,7 @@ export default function SuppliersPage() {
               </div>
               <div className="text-sm text-[var(--text-muted)]">
                 <span className="block mb-1">أنواع الوقود الموردة</span>
-                {supplier.fuel_breakdown?.length ? <div className="flex flex-wrap gap-2">{supplier.fuel_breakdown.map((fuel) => <span key={fuel.name} className="status-badge">{fuel.name}: {Number(fuel.quantity || 0).toLocaleString('ar-EG')} لتر</span>)}</div> : <span>لا توجد توريدات مسجلة بعد.</span>}
+                {supplier.fuel_breakdown?.length ? <div className="flex flex-wrap gap-2">{supplier.fuel_breakdown.map((fuel) => <span key={`${fuel.name}-${fuel.code || ''}`} className="status-badge">{fuel.name}{fuel.code ? ` (${fuel.code})` : ''}: {Number(fuel.quantity || 0).toLocaleString('ar-EG')} لتر</span>)}</div> : <span>لا توجد توريدات مسجلة بعد.</span>}
               </div>
               <div className="flex gap-2 flex-wrap">
               <button
@@ -218,11 +221,11 @@ export default function SuppliersPage() {
               >
                 عرض التفاصيل
               </button>
-              {isManager && <><button className="ui-button secondary" onClick={() => edit(supplier)}>تعديل</button><button className="ui-button danger" onClick={() => remove(supplier)}>حذف</button></>}
+              {canManageAccounts && <button className="ui-button secondary" onClick={() => edit(supplier)}>تعديل</button>}{isManager && <button className="ui-button danger" onClick={() => remove(supplier)}>حذف</button>}
               </div>
             </article>
           ))}
-        </div>
+        </div>}
         {formOpen && (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <form

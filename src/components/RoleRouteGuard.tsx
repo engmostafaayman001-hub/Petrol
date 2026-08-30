@@ -15,7 +15,7 @@ const supervisorRouteCapabilities: Array<{ prefix: string; capability: Parameter
   { prefix: '/ledger', capability: 'audit:read' },
   { prefix: '/adjustments', capability: 'adjustment:request' },
   { prefix: '/customers', capability: 'customer:manage' },
-  { prefix: '/suppliers', capability: 'supplier:payment' },
+  { prefix: '/suppliers', capability: 'supplier:manage' },
 ];
 
 export default function RoleRouteGuard({ children }: { children: React.ReactNode }) {

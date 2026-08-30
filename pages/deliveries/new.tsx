@@ -6,6 +6,7 @@ import FormField from '../../src/components/FormField';
 import { useCurrentStationId } from '../../src/lib/station';
 import supabase from '../../src/lib/supabaseClient';
 import { formatMoney, multiplyMoney, parseNumericInput } from '../../src/core/numbers';
+import { ErrorState, LoadingState } from '../../src/components/DataState';
 
 const cairoDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
 
@@ -20,24 +21,27 @@ export default function NewDelivery() {
   const [supplierForm, setSupplierForm] = useState({ name: '', code: '', contact_name: '', contact_phone: '', notes: '' });
   const [form, setForm] = useState<any>({ station_id: '', tank_id: '', business_date: cairoDate(), supplier_id: '', quantity: '', unit_cost: '', paid_amount: '', reference_no: '', notes: '' });
   const [message, setMessage] = useState<string | null>(null);
+  const [loadingData, setLoadingData] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     if (!stationId) {
       setTanks([]);
+      setLoadingData(true);
       return;
     }
 
+    setLoadingData(true); setLoadFailed(false);
     setForm((current: any) => ({ ...current, station_id: stationId }));
-    supabase.auth.getSession().then(({ data }: { data: { session: { access_token?: string } | null } }) => {
+    supabase.auth.getSession().then(async ({ data }: { data: { session: { access_token?: string } | null } }) => {
       const headers: Record<string, string> = data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {};
-      fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`, { headers })
-        .then((r) => r.json())
-        .then((d) => setTanks(d.tanks || []))
-        .catch(() => setTanks([]));
-      fetch(`/api/suppliers?stationId=${encodeURIComponent(stationId)}`, { headers })
-        .then((r) => r.json())
-        .then((d) => setSuppliers(d.suppliers || []))
-        .catch(() => setSuppliers([]));
+      try {
+        const [tanksResponse, suppliersResponse] = await Promise.all([fetch(`/api/tanks?stationId=${encodeURIComponent(stationId)}`, { headers }), fetch(`/api/suppliers?stationId=${encodeURIComponent(stationId)}`, { headers })]);
+        if (!tanksResponse.ok || !suppliersResponse.ok) throw new Error();
+        const [tanksData, suppliersData] = await Promise.all([tanksResponse.json(), suppliersResponse.json()]);
+        setTanks(tanksData.tanks || []); setSuppliers(suppliersData.suppliers || []);
+      } catch { setTanks([]); setSuppliers([]); setLoadFailed(true); }
+      finally { setLoadingData(false); }
     });
   }, [stationId]);
 
@@ -126,7 +130,7 @@ export default function NewDelivery() {
   return (
     <PageLayout title="تسجيل استلام">
       <h2 className="text-xl font-semibold mb-4 text-right">تسجيل استلام شحنة</h2>
-      <form onSubmit={submit} className="max-w-md space-y-4">
+      {loadingData ? <LoadingState /> : loadFailed ? <ErrorState onRetry={() => { if (stationId) setForm((current: any) => ({ ...current, station_id: stationId })); window.location.reload(); }} /> : <form onSubmit={submit} className="max-w-md space-y-4">
         <FormField label="الخزان">
           <select required value={form.tank_id} onChange={(e) => { update('tank_id', e.target.value); const opt = e.target.selectedOptions[0]; update('fuel_type_id', opt?.dataset?.fuel); }} className="w-full border rounded px-3 py-2">
             <option value="">اختر خزان</option>
@@ -175,7 +179,7 @@ export default function NewDelivery() {
           <button type="submit" disabled={saving} className="bg-primary text-white px-4 py-2 rounded">{saving ? 'جارٍ التسجيل...' : 'تسجيل الاستلام'}</button>
         </div>
         {message && <div className="form-error" role="alert">{message}</div>}
-      </form>
+      </form>}
       {supplierFormOpen && <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="ui-card form-card modal-card form-grid" onSubmit={addSupplier}><h3>إضافة مورد جديد</h3><FormField label="اسم المورد"><input required value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} /></FormField><FormField label="كود المورد"><input required value={supplierForm.code} onChange={(e) => setSupplierForm({ ...supplierForm, code: e.target.value })} /></FormField><FormField label="اسم جهة الاتصال"><input value={supplierForm.contact_name} onChange={(e) => setSupplierForm({ ...supplierForm, contact_name: e.target.value })} /></FormField><FormField label="الهاتف"><input value={supplierForm.contact_phone} onChange={(e) => setSupplierForm({ ...supplierForm, contact_phone: e.target.value })} /></FormField><FormField label="ملاحظات"><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({ ...supplierForm, notes: e.target.value })} /></FormField><div className="form-actions"><button className="ui-button" type="submit">حفظ المورد</button><button className="ui-button secondary" type="button" onClick={() => setSupplierFormOpen(false)}>إلغاء</button></div></form></div>}
     </PageLayout>
   );

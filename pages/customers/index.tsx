@@ -11,6 +11,7 @@ import { useCurrentStationId } from "../../src/lib/station";
 import supabase from "../../src/lib/supabaseClient";
 import { formatMoney as formatMoneyValue, parseNumericInput } from "../../src/core/numbers";
 import { printDetails } from "../../src/lib/printDetails";
+import { LoadingState } from "../../src/components/DataState";
 
 type Customer = {
   id: string;
@@ -39,6 +40,7 @@ export default function CustomersPage() {
   const { user } = useRequireAuth();
   const stationId = useCurrentStationId(user?.id ?? null);
   const { role } = useRole();
+  const canManageAccounts = role === "manager" || role === "supervisor";
   const isManager = role === "manager";
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selected, setSelected] = useState<Customer | null>(null);
@@ -61,6 +63,7 @@ export default function CustomersPage() {
     notes: "",
   });
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
   const [tanks, setTanks] = useState<any[]>([]);
   const [saleFormOpen, setSaleFormOpen] = useState(false);
   const [saleForm, setSaleForm] = useState({ tank_id: "", quantity: "", paid_amount: "", business_date: new Date().toISOString().slice(0, 10), driver_name: "", vehicle_number: "" });
@@ -69,12 +72,12 @@ export default function CustomersPage() {
   }
   async function load() {
     if (!stationId) return;
-    const response = await fetch(
-      `/api/customers?stationId=${encodeURIComponent(stationId)}`,
-      { headers: { Authorization: `Bearer ${await token()}` } },
-    );
-    const data = await response.json();
-    if (response.ok) setCustomers(data.customers || []);
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/customers?stationId=${encodeURIComponent(stationId)}`, { headers: { Authorization: `Bearer ${await token()}` } });
+      const data = await response.json();
+      if (response.ok) setCustomers(data.customers || []); else setMessage(data.error || "تعذر تحميل العملاء.");
+    } finally { setLoading(false); }
   }
   useEffect(() => {
     load();
@@ -98,7 +101,7 @@ export default function CustomersPage() {
     load();
   }
   function edit(customer: Customer) {
-    if (!isManager) return;
+    if (!canManageAccounts) return;
     setEditing(customer);
     setForm({ name: customer.name, phone: customer.phone || "", email: customer.email || "", address: customer.address || "", notes: "" });
     setFormOpen(true);
@@ -212,10 +215,10 @@ export default function CustomersPage() {
           eyebrow="الحسابات"
           title="العملاء والشركات"
           description="حساب موحد لكل شركة مع كشف حركة وتحصيلات."
-          actions={isManager ? <Button onClick={() => setFormOpen(true)}>إضافة عميل</Button> : undefined}
+          actions={canManageAccounts ? <Button onClick={() => setFormOpen(true)}>إضافة عميل</Button> : undefined}
         />
         {message && <p className="form-error">{message}</p>}
-        <div className="account-cards">
+        {loading ? <LoadingState /> : <div className="account-cards">
           {customers.map((customer) => (
             <article className="account-card" key={customer.id}>
               <header>
@@ -233,11 +236,11 @@ export default function CustomersPage() {
               >
                 عرض التفاصيل
               </button>
-              {isManager && <><button className="ui-button secondary" onClick={() => edit(customer)}>تعديل</button><button className="ui-button danger" onClick={() => remove(customer)}>حذف</button></>}
+              {canManageAccounts && <button className="ui-button secondary" onClick={() => edit(customer)}>تعديل</button>}{isManager && <button className="ui-button danger" onClick={() => remove(customer)}>حذف</button>}
               </div>
             </article>
           ))}
-        </div>
+        </div>}
         {formOpen && (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <form

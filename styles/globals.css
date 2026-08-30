@@ -1223,3 +1223,67 @@ html.dark .inventory-alert,
     box-shadow: none !important;
   }
 }
+
+/* =========================================================
+   SKELETON LOADERS — Performance optimization
+========================================================= */
+
+.skeleton-container { display: grid; gap: 12px; }
+.skeleton-line { background: linear-gradient(90deg, var(--surface-soft) 0%, var(--surface-muted) 50%, var(--surface-soft) 100%); background-size: 200% 100%; animation: skeleton-pulse 1.5s ease-in-out infinite; border-radius: var(--radius-md); }
+
+@keyframes skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-row td { padding: 12px 18px !important; }
+.skeleton-row td > div { height: 16px; border-radius: 6px; background: linear-gradient(90deg, var(--surface-soft) 0%, var(--surface-muted) 50%, var(--surface-soft) 100%); animation: skeleton-pulse 1.5s ease-in-out infinite; }
+
+.skeleton-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.skeleton-card > div { height: 20px; border-radius: 6px; background: linear-gradient(90deg, var(--surface-soft) 0%, var(--surface-muted) 50%, var(--surface-soft) 100%); animation: skeleton-pulse 1.5s ease-in-out infinite; }
+.skeleton-card > div:last-child { width: 30%; }
+
+/* Performance: Smooth transitions and animations */
+.fade-in { animation: fade-in 0.3s ease-in-out; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.slide-up { animation: slide-up 0.3s ease-out; }
+@keyframes slide-up { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Admin-specific improvements */
+.admin-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; padding: 16px; background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); }
+.admin-header h1 { margin: 0; font-size: 20px; font-weight: 800; color: var(--text-heading); }
+.admin-header .actions { display: flex; gap: 8px; }
+
+.admin-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.admin-card { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+.admin-card h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; color: var(--text-heading); }
+.admin-card .stat { font-size: 24px; font-weight: 800; color: var(--brand); }
+.admin-card small { display: block; margin-top: 8px; color: var(--text-muted); font-size: 11px; }
+
+/* Improved form styling */
+.form-section { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); margin-bottom: 16px; }
+.form-section h3 { margin: 0 0 16px; color: var(--text-heading); font-size: 14px; font-weight: 700; }
+
+/* Enhanced table styling */
+.data-table thead { background: var(--surface-soft); }
+.data-table tbody tr { transition: background-color 0.15s ease; }
+.data-table tbody tr:hover { background: color-mix(in srgb, var(--brand-soft) 50%, transparent); }
+
+/* Loading indicators */
+.loading-dots { display: inline-flex; gap: 4px; }
+.loading-dots span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: loading-dots 1.4s ease-in-out infinite; }
+.loading-dots span:nth-child(1) { animation-delay: 0s; }
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes loading-dots { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+
+/* Utility classes */
+.mt-2 { margin-top: 8px; }
+.mt-4 { margin-top: 16px; }
+.mb-2 { margin-bottom: 8px; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.flex { display: flex; }
+.flex-col { flex-direction: column; }

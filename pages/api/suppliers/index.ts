@@ -21,25 +21,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           db.from('fuel_types').select('id,name,code').eq('station_id', stationId),
         ]);
         if (deliveriesError || paymentsError || fuelTypesError) throw deliveriesError || paymentsError || fuelTypesError;
-        const fuelNames = new Map((fuelTypes || []).map((fuel: any) => [fuel.id, fuel.name || fuel.code]));
-        const summaries = new Map<string, { supply_count: number; total_supplies: number; total_paid: number; fuel_quantities: Map<string, number> }>();
+        const fuelCatalog = new Map((fuelTypes || []).map((fuel: any) => [fuel.id, { name: fuel.name || 'وقود غير محدد', code: fuel.code || null }]));
+        const summaries = new Map<string, { supply_count: number; total_supplies: number; total_paid: number; fuel_quantities: Map<string, { name: string; code: string | null; quantity: number }> }>();
         for (const delivery of deliveries || []) {
-          const summary = summaries.get(delivery.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, number>() };
+          const summary = summaries.get(delivery.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, { name: string; code: string | null; quantity: number }>() };
           summary.supply_count += 1;
           summary.total_supplies += Number(delivery.quantity || 0) * Number(delivery.unit_cost || 0);
           summary.total_paid += Number(delivery.paid_amount || 0);
-          const fuelName = fuelNames.get(delivery.fuel_type_id) || 'وقود غير محدد';
-          summary.fuel_quantities.set(fuelName, Number(summary.fuel_quantities.get(fuelName) || 0) + Number(delivery.quantity || 0));
+          const fuel = fuelCatalog.get(delivery.fuel_type_id) || { name: 'وقود غير محدد', code: null };
+          const currentFuel = summary.fuel_quantities.get(delivery.fuel_type_id) || { ...fuel, quantity: 0 };
+          currentFuel.quantity += Number(delivery.quantity || 0);
+          summary.fuel_quantities.set(delivery.fuel_type_id, currentFuel);
           summaries.set(delivery.supplier_id, summary);
         }
         for (const payment of payments || []) {
-          const summary = summaries.get(payment.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, number>() };
+          const summary = summaries.get(payment.supplier_id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, { name: string; code: string | null; quantity: number }>() };
           summary.total_paid += Number(payment.debit || 0);
           summaries.set(payment.supplier_id, summary);
         }
         return res.status(200).json({ suppliers: (data || []).map((supplier: any) => {
-          const summary = summaries.get(supplier.id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, number>() };
-          return { ...supplier, supply_count: summary.supply_count, total_supplies: summary.total_supplies, total_paid: summary.total_paid, total_due: Math.max(summary.total_supplies - summary.total_paid, 0), fuel_breakdown: [...summary.fuel_quantities.entries()].map(([name, quantity]) => ({ name, quantity })) };
+          const summary = summaries.get(supplier.id) || { supply_count: 0, total_supplies: 0, total_paid: 0, fuel_quantities: new Map<string, { name: string; code: string | null; quantity: number }>() };
+          return { ...supplier, supply_count: summary.supply_count, total_supplies: summary.total_supplies, total_paid: summary.total_paid, total_due: Math.max(summary.total_supplies - summary.total_paid, 0), fuel_breakdown: [...summary.fuel_quantities.values()].sort((left, right) => left.name.localeCompare(right.name, 'ar')).map((fuel) => ({ name: fuel.name, code: fuel.code, quantity: fuel.quantity })) };
         }) });
       }
       const supplier = (data || []).find((item) => item.id === supplierId);
@@ -75,7 +77,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ supplier, transactions, balance, summary: { operations: deliveries?.length || 0, total_supplies: totalSupplies, total_paid: totalPaid, total_due: balance } });
     }
     if (req.method === 'POST') {
-      await requireStationManager(req, stationId);
+      const actor = await requireStationOperator(req, stationId);
+      const { data: profile } = await getServiceSupabase().from('profiles').select('role').eq('id', actor.id).eq('station_id', stationId).maybeSingle();
+      if (!profile || !['manager', 'supervisor'].includes(profile.role)) return res.status(403).json({ error: 'إدارة الموردين متاحة للمدير أو المشرف.' });
       const { name, code, contact_name, contact_phone, notes } = req.body || {};
       if (typeof name !== 'string' || name.trim().length < 2 || typeof code !== 'string' || code.trim().length < 2) return res.status(400).json({ error: 'اسم المورد وكوده مطلوبان.' });
       const { data, error } = await db.from('suppliers').insert({ station_id: stationId, code: code.trim().toUpperCase(), name: name.trim(), contact_name: contact_name?.trim() || null, contact_phone: contact_phone?.trim() || null, notes: notes?.trim() || null }).select('id,code,name,contact_name,contact_phone,notes,is_active').single();
@@ -83,7 +87,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(201).json({ supplier: data });
     }
     if (req.method === 'PATCH' || req.method === 'DELETE') {
-      await requireStationManager(req, stationId);
+      const actor = await requireStationOperator(req, stationId);
+      const { data: profile } = await getServiceSupabase().from('profiles').select('role').eq('id', actor.id).eq('station_id', stationId).maybeSingle();
+      if (!profile || !['manager', 'supervisor'].includes(profile.role)) return res.status(403).json({ error: 'تعديل الموردين متاح للمدير أو المشرف.' });
       const supplierId = String(req.body?.id || req.query.supplierId || '').trim();
       if (!supplierId) return res.status(400).json({ error: 'معرف المورد مطلوب.' });
       const update = {
@@ -95,6 +101,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
       if (req.method === 'PATCH' && (!update.name || update.name.length < 2 || !update.code || update.code.length < 2)) return res.status(400).json({ error: 'اسم المورد وكوده مطلوبان.' });
       if (req.method === 'DELETE') {
+        if (profile.role !== 'manager') return res.status(403).json({ error: 'حذف المورد متاح للمدير فقط.' });
         const { error } = await db.from('suppliers').delete().eq('id', supplierId).eq('station_id', stationId);
         if (error) return res.status(409).json({ error: 'لا يمكن حذف المورد نهائيًا لأنه مرتبط بتوريدات أو مدفوعات تاريخية.' });
         return res.status(200).json({ deleted: true });

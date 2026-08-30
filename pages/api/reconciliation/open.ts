@@ -17,7 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const operator = await requireStationOperator(req, station_id);
     const supabase = getServiceSupabase();
     const { data: operatorProfile } = await supabase.from('profiles').select('role').eq('id', operator.id).eq('station_id', station_id).maybeSingle();
-    const isManager = operatorProfile?.role === 'manager';
+    const canOpenFullShift = operatorProfile?.role === 'manager' || operatorProfile?.role === 'supervisor';
     const { data: activeMeters, error: metersError } = await supabase
       .from('pump_meters')
       .select('id,tank_id,meter_slot')
@@ -50,16 +50,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (missingMeters.length) return res.status(400).json({ error: 'يجب إدخال جميع قراءات العداد المطلوبة لكل خزان.' });
     const normalizedMeters = operationalMeters.map((meter) => ({ meter_id: meter.id, reading: submittedReadings.get(meter.id) }));
     if (opening_meters.length !== normalizedMeters.length) return res.status(400).json({ error: 'يجب إرسال قراءة واحدة لكل عداد نشط فقط.' });
-    if (!isManager) {
-      const { data: closedSessions } = await supabase.from('reconciliation_sessions').select('id,submitted_at').eq('station_id', station_id).in('status', ['submitted', 'approved']).order('submitted_at', { ascending: false });
-      const closedIds = (closedSessions || []).map((session: any) => session.id);
-      if (closedIds.length) {
-        const { data: previousReadings } = await supabase.from('reconciliation_meter_readings').select('meter_id,closing_reading,session_id,recorded_at').in('session_id', closedIds).not('closing_reading', 'is', null).order('recorded_at', { ascending: false });
-        const previousByMeter = new Map<string, number>();
-        for (const reading of previousReadings || []) if (!previousByMeter.has(reading.meter_id)) previousByMeter.set(reading.meter_id, Number(reading.closing_reading));
-        const mismatched = normalizedMeters.find((meter) => previousByMeter.has(meter.meter_id) && Number(meter.reading) !== previousByMeter.get(meter.meter_id));
-        if (mismatched) return res.status(403).json({ error: 'قراءة البداية تلقائية من إغلاق الجلسة السابقة ولا يمكن تعديلها إلا بواسطة المدير.' });
-      }
+    if (!canOpenFullShift) {
+      return res.status(403).json({ error: 'ليس لديك صلاحية فتح الوردية.' });
     }
     const { data: activeTanks, error: tanksStatusError } = await supabase
       .from('v_tank_status')

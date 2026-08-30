@@ -39,7 +39,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ customer, transactions: allEntries, balance: totalDue, summary: { operations: sales?.length || 0, total_sales: totalSales, total_paid: totalPaidFromSales + totalCollected, total_due: totalDue } });
     }
     if (req.method === 'POST') {
-      await requireStationManager(req, stationId);
+      const actor = await requireStationOperator(req, stationId);
+      const { data: profile } = await getServiceSupabase().from('profiles').select('role').eq('id', actor.id).eq('station_id', stationId).maybeSingle();
+      if (!profile || !['manager', 'supervisor'].includes(profile.role)) return res.status(403).json({ error: 'إدارة العملاء متاحة للمدير أو المشرف.' });
       const { name, phone, email, address, notes } = req.body || {};
       if (typeof name !== 'string' || name.trim().length < 2) return res.status(400).json({ error: 'اسم العميل مطلوب.' });
       const { data, error } = await db.from('customers').insert({ station_id: stationId, name: name.trim(), phone: typeof phone === 'string' ? phone.trim() : null, email: typeof email === 'string' ? email.trim() : null, address: typeof address === 'string' ? address.trim() : null, notes: typeof notes === 'string' ? notes.trim() : null, created_by: actor.id }).select('id,name,phone,email,address,notes,is_active,created_at').single();
@@ -47,7 +49,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(201).json({ customer: data });
     }
     if (req.method === 'PATCH' || req.method === 'DELETE') {
-      await requireStationManager(req, stationId);
+      const actor = await requireStationOperator(req, stationId);
+      const { data: profile } = await getServiceSupabase().from('profiles').select('role').eq('id', actor.id).eq('station_id', stationId).maybeSingle();
+      if (!profile || !['manager', 'supervisor'].includes(profile.role)) return res.status(403).json({ error: 'تعديل العملاء متاح للمدير أو المشرف.' });
       const customerId = String(req.body?.id || req.query.customerId || '').trim();
       if (!customerId) return res.status(400).json({ error: 'معرف العميل مطلوب.' });
       const update = {
@@ -59,6 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
       if (req.method === 'PATCH' && (!update.name || update.name.length < 2)) return res.status(400).json({ error: 'اسم العميل مطلوب.' });
       if (req.method === 'DELETE') {
+        if (profile.role !== 'manager') return res.status(403).json({ error: 'حذف العميل متاح للمدير فقط.' });
         const { error } = await db.from('customers').delete().eq('id', customerId).eq('station_id', stationId);
         if (error) return res.status(409).json({ error: 'لا يمكن حذف العميل نهائيًا لأنه مرتبط بمبيعات أو تحصيلات تاريخية.' });
         return res.status(200).json({ deleted: true });

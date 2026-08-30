@@ -7,6 +7,8 @@ import {
 } from "../../src/components/DataState";
 import { useRequireAuth, useRole } from "../../src/lib/auth";
 import { useCurrentStationId } from "../../src/lib/station";
+import { useParallelFetch } from "../../src/lib/optimizedFetch";
+import { SkeletonLoader, SkeletonCard } from "../../src/components/SkeletonLoader";
 import supabase from "../../src/lib/supabaseClient";
 
 const messageFrom = (data: any, fallback: string) =>
@@ -58,7 +60,7 @@ function SessionMeterGrid({
   line,
   editable,
   sessionId,
-  isManager,
+  canManageShift,
   onSaved,
   detailReadings,
   setDetailReadings,
@@ -66,7 +68,7 @@ function SessionMeterGrid({
   line: any;
   editable: boolean;
   sessionId: string;
-  isManager: boolean;
+  canManageShift: boolean;
   onSaved: () => void;
   detailReadings: Record<string, string>;
   setDetailReadings: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -92,13 +94,13 @@ function SessionMeterGrid({
     } catch (reasonError: any) { setError(reasonError.message || "تعذر تعديل القراءة."); }
     finally { setSaving(false); }
   }
-  return <><div className="session-meter-grid">{readings.map((reading: any, index: number) => <div key={reading.meter_id}><b>قراءة العداد {reading.reading_number || index + 1}</b><span>{reading.meter_code || reading.meter_name || 'غير مرتبط'}</span>{reading.opening_adjusted_by_manager && <em className="status-badge status-warning">تم تعديلها بواسطة المدير</em>}<small>فتح: {reading.opening_reading ?? '—'} · الإغلاق: {reading.closing_reading ?? '—'} · الفرق: {reading.meter_sold_qty ?? '—'} لتر · القيمة: {reading.meter_value == null ? '—' : `${Number(reading.meter_value).toLocaleString('ar-EG')} ج.م`}</small><small className={reading.inventory_deduction?.status === "pending" ? "text-amber-700" : "text-emerald-700"}>خصم المخزون: {reading.inventory_deduction?.status === "applied" ? `${Number(reading.inventory_deduction.quantity || reading.meter_sold_qty || 0).toLocaleString('ar-EG')} لتر · Applied` : "Pending Inventory Deduction"}</small>{isManager && editable && <button type="button" className="ui-button secondary mt-2" onClick={() => { setEditing(reading); setNewOpening(String(reading.opening_reading ?? "")); setError(""); }}>تعديل قراءة البداية</button>}{editable && <input type="number" min={reading.opening_reading ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:${reading.reading_number || index + 1}`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:${reading.reading_number || index + 1}`]: event.target.value }))} />}</div>)}</div>{editing && <div className="modal-backdrop" role="dialog" aria-modal="true"><section className="ui-card form-card modal-card form-grid" onMouseDown={(event) => event.stopPropagation()}><h3>تعديل قراءة العداد</h3><p>القراءة الحالية: {Number(editing.opening_reading).toLocaleString("ar-EG")}</p><div className="form-field"><label>القراءة الجديدة</label><input autoFocus type="number" min="0" step="0.001" value={newOpening} onChange={(event) => setNewOpening(event.target.value)} /></div><div className="form-field"><label>سبب التعديل</label><textarea required value={reason} onChange={(event) => setReason(event.target.value)} /></div><p className="text-amber-700">تعديل قراءة العداد سيؤثر على فرق العداد والمبيعات والتسوية والتقارير المرتبطة بهذه الجلسة.</p>{error && <p className="form-error">{error}</p>}<div className="form-actions"><button type="button" className="ui-button" disabled={saving} onClick={saveOpening}>{saving ? "جارٍ الحفظ…" : "تأكيد التعديل"}</button><button type="button" className="ui-button secondary" onClick={() => setEditing(null)}>إلغاء</button></div></section></div>}</>;
+  return <><div className="session-meter-grid">{readings.map((reading: any, index: number) => <div key={reading.meter_id}><b>قراءة العداد {reading.reading_number || index + 1}</b><span>{reading.meter_code || reading.meter_name || 'غير مرتبط'}</span>{reading.opening_adjusted_by_manager && <em className="status-badge status-warning">تم تعديلها بواسطة المدير</em>}<small>فتح: {reading.opening_reading ?? '—'} · الإغلاق: {reading.closing_reading ?? '—'} · الفرق: {reading.meter_sold_qty ?? '—'} لتر · القيمة: {reading.meter_value == null ? '—' : `${Number(reading.meter_value).toLocaleString('ar-EG')} ج.م`}</small><small className={reading.inventory_deduction?.status === "pending" ? "text-amber-700" : "text-emerald-700"}>خصم المخزون: {reading.inventory_deduction?.status === "applied" ? `${Number(reading.inventory_deduction.quantity || reading.meter_sold_qty || 0).toLocaleString('ar-EG')} لتر · Applied` : "Pending Inventory Deduction"}</small>{canManageShift && editable && <button type="button" className="ui-button secondary mt-2" onClick={() => { setEditing(reading); setNewOpening(String(reading.opening_reading ?? "")); setError(""); }}>تعديل قراءة البداية</button>}{editable && <input type="number" min={reading.opening_reading ?? 0} step="0.001" placeholder="قراءة الإغلاق" value={detailReadings[`${line.id}:${reading.reading_number || index + 1}`] || ''} onChange={(event) => setDetailReadings((current) => ({ ...current, [`${line.id}:${reading.reading_number || index + 1}`]: event.target.value }))} />}</div>)}</div>{editing && <div className="modal-backdrop" role="dialog" aria-modal="true"><section className="ui-card form-card modal-card form-grid" onMouseDown={(event) => event.stopPropagation()}><h3>تعديل قراءة العداد</h3><p>القراءة الحالية: {Number(editing.opening_reading).toLocaleString("ar-EG")}</p><div className="form-field"><label>القراءة الجديدة</label><input autoFocus type="number" min="0" step="0.001" value={newOpening} onChange={(event) => setNewOpening(event.target.value)} /></div><div className="form-field"><label>سبب التعديل</label><textarea required value={reason} onChange={(event) => setReason(event.target.value)} /></div><p className="text-amber-700">تعديل قراءة العداد سيؤثر على فرق العداد والمبيعات والتسوية والتقارير المرتبطة بهذه الجلسة.</p>{error && <p className="form-error">{error}</p>}<div className="form-actions"><button type="button" className="ui-button" disabled={saving} onClick={saveOpening}>{saving ? "جارٍ الحفظ…" : "تأكيد التعديل"}</button><button type="button" className="ui-button secondary" onClick={() => setEditing(null)}>إلغاء</button></div></section></div>}</>;
 }
 
 export default function ReconciliationIndex() {
   const { user } = useRequireAuth();
   const { role } = useRole();
-  const isManager = role === "manager";
+  const canManageShift = role === "manager" || role === "supervisor";
   const stationId = useCurrentStationId(user?.id ?? null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -369,8 +371,8 @@ export default function ReconciliationIndex() {
                           قراءة العداد {index + 1}
                           <small>{meter.code}</small>
                             <input
-                            readOnly={!isManager && previousOpenings[meter.id] !== undefined}
-                            aria-readonly={!isManager && previousOpenings[meter.id] !== undefined}
+                            readOnly={!canManageShift && previousOpenings[meter.id] !== undefined}
+                            aria-readonly={!canManageShift && previousOpenings[meter.id] !== undefined}
                             required
                             min="0"
                             step="0.001"
@@ -382,9 +384,9 @@ export default function ReconciliationIndex() {
                                 [meter.id]: event.target.value,
                               }))
                             }
-                            placeholder={isManager ? "قراءة البداية" : "قراءة تلقائية من إغلاق الجلسة السابقة"}
+                            placeholder={canManageShift ? "قراءة البداية" : "قراءة تلقائية من إغلاق الجلسة السابقة"}
                           />
-                          <small>{previousOpenings[meter.id] !== undefined ? "قراءة تلقائية من إغلاق الجلسة السابقة" : "أول جلسة: أدخل القراءة يدويًا"}{!isManager && previousOpenings[meter.id] !== undefined ? " 🔒" : ""}</small>
+                          <small>{previousOpenings[meter.id] !== undefined ? "قراءة تلقائية من إغلاق الجلسة السابقة" : "أول جلسة: أدخل القراءة يدويًا"}{!canManageShift && previousOpenings[meter.id] !== undefined ? " 🔒" : ""}</small>
                         </label>
                       ))}
                     </div>
@@ -515,7 +517,7 @@ export default function ReconciliationIndex() {
                 <article><small>قيمة فرق العدادات</small><b>{Number(detailLines.reduce((total, line) => total + (line.meter_readings || []).reduce((sum: number, reading: any) => sum + Number(reading.meter_value || 0), 0), 0)).toLocaleString('ar-EG')} ج.م</b><em>بسعر الجلسة المحفوظ</em></article>
               </div>
               <section className="session-detail-section"><h4>التسوية والمخزون حسب الخزان</h4><div className="table-scroll"><table className="data-table"><thead><tr><th>الخزان</th><th>الرصيد الافتتاحي</th><th>التوريدات</th><th>المبيعات</th><th>الرصيد النظري</th><th>الرصيد الفعلي</th><th>فرق التسوية</th></tr></thead><tbody>{detailLines.map((line) => <tr key={line.id}><td>{line.tank_code} · {line.tank_name || line.fuel_name}</td><td>{Number(line.opening_qty ?? line.opening_tank_qty ?? 0).toLocaleString('ar-EG')} لتر</td><td>{Number(line.delivered_qty || 0).toLocaleString('ar-EG')} لتر</td><td>{Number(line.meter_sold_qty ?? line.sold_qty ?? 0).toLocaleString('ar-EG')} لتر</td><td>{Number(line.expected_closing_qty || 0).toLocaleString('ar-EG')} لتر</td><td>{line.actual_closing_qty == null ? '—' : `${Number(line.actual_closing_qty).toLocaleString('ar-EG')} لتر`}</td><td>{line.variance_qty == null ? '—' : `${Number(line.variance_qty).toLocaleString('ar-EG')} لتر`}</td></tr>)}</tbody></table></div></section>
-              <div className="session-detail-lines">{detailLines.map((line) => <article className="session-detail-line" key={line.id}><header><b>{line.tank_code} · {line.tank_name || line.fuel_name}</b><span>{line.fuel_name || 'وقود'}</span></header><SessionMeterGrid line={line} editable={detailsSession.status === 'open'} sessionId={detailsSession.id} isManager={isManager} onSaved={() => showSessionDetails(detailsSession)} detailReadings={detailReadings} setDetailReadings={setDetailReadings} /><footer>الافتتاح: {line.opening_tank_qty ?? '—'} لتر · التوريد: {line.delivered_qty ?? '—'} لتر · البيع: {line.sold_qty ?? '—'} لتر · المتوقع: {line.expected_closing_qty ?? '—'} لتر · الفعلي: {line.actual_closing_qty ?? '—'} لتر · الفرق: {line.variance_qty ?? '—'} لتر</footer></article>)}</div>
+              <div className="session-detail-lines">{detailLines.map((line) => <article className="session-detail-line" key={line.id}><header><b>{line.tank_code} · {line.tank_name || line.fuel_name}</b><span>{line.fuel_name || 'وقود'}</span></header><SessionMeterGrid line={line} editable={detailsSession.status === 'open'} sessionId={detailsSession.id} canManageShift={canManageShift} onSaved={() => showSessionDetails(detailsSession)} detailReadings={detailReadings} setDetailReadings={setDetailReadings} /><footer>الافتتاح: {line.opening_tank_qty ?? '—'} لتر · التوريد: {line.delivered_qty ?? '—'} لتر · البيع: {line.sold_qty ?? '—'} لتر · المتوقع: {line.expected_closing_qty ?? '—'} لتر · الفعلي: {line.actual_closing_qty ?? '—'} لتر · الفرق: {line.variance_qty ?? '—'} لتر</footer></article>)}</div>
               <section className="session-operations-modal"><h4>تفاصيل عمليات الجلسة</h4>{detailOperations.length ? <div className="table-wrap"><table><thead><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>الكمية</th><th>القيمة</th><th>الحساب</th></tr></thead><tbody>{detailOperations.map((operation: any) => <tr key={`${operation.type}-${operation.id}`}><td>{operation.occurred_at ? new Date(operation.occurred_at).toLocaleString('ar-EG') : '—'}</td><td>{operation.type === 'sale' ? 'بيع' : operation.type === 'delivery' ? 'توريد' : operation.type === 'customer_payment' ? 'تحصيل عميل' : operation.type === 'supplier_payment' ? 'دفع مورد' : 'خدمة'}</td><td>{operation.detail || '—'}</td><td>{operation.quantity ? `${Number(operation.quantity).toLocaleString('ar-EG')} لتر` : '—'}</td><td>{Number(operation.value || 0).toLocaleString('ar-EG')} ج.م</td><td>{operation.account || '—'}</td></tr>)}</tbody></table></div> : <p>لا توجد عمليات مسجلة لهذه الجلسة.</p>}</section>
               {detailsSession.status === 'open' && <><button className="ui-button mt-4" disabled={savingDetailReadings} onClick={saveDetailReadings}>{savingDetailReadings ? 'جارٍ حفظ القراءات...' : 'حفظ قراءات العدادات'}</button><button className="ui-button secondary mt-4 mr-2" onClick={() => { window.location.href = `/reconciliation/session?sessionId=${detailsSession.id}`; }}>فتح شاشة الإغلاق الكاملة</button></>}
             </>}
