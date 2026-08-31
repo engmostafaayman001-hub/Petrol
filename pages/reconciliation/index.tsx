@@ -183,6 +183,10 @@ export default function ReconciliationIndex() {
   async function openSession(event: React.FormEvent) {
     event.preventDefault();
     setMessage("");
+    if (openSessions.length > 0) {
+      setOpenForm(false);
+      return setMessage("توجد وردية مفتوحة بالفعل. أغلق الوردية الحالية أولًا قبل فتح وردية جديدة.");
+    }
     if (!stationId || !selectedShift)
       return setMessage("اختر نوع الوردية أولًا.");
     if (!groupedMeters.length || groupedMeters.some((group) => group.meters.length !== Number(group.tank.meter_readings_count || 1)))
@@ -318,10 +322,10 @@ export default function ReconciliationIndex() {
           <div />{" "}
           <button
             className="btn btn-primary"
-            disabled={openSessions.length > 0}
+            disabled={loading || openSessions.length > 0}
             onClick={() => setOpenForm((visible) => !visible)}
           >
-            {openForm ? "إغلاق النموذج" : "فتح وردية جديدة"}
+            {loading ? "جارٍ التحقق من الوردية…" : openForm ? "إغلاق النموذج" : "فتح وردية جديدة"}
           </button>
         </div>
         {openForm && (

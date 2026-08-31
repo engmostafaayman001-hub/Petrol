@@ -1,0 +1,37 @@
+-- Expand standalone invoices to match the electronic invoice layout.
+alter table public.extra_sales
+  add column if not exists seller_station_name text,
+  add column if not exists seller_tax_number text,
+  add column if not exists seller_commercial_registration_number text,
+  add column if not exists seller_registration_number text,
+  add column if not exists seller_email text,
+  add column if not exists seller_phone text,
+  add column if not exists seller_address text,
+  add column if not exists buyer_name text,
+  add column if not exists buyer_tax_number text,
+  add column if not exists buyer_registration_number text,
+  add column if not exists buyer_address text,
+  add column if not exists item_code text,
+  add column if not exists item_name text,
+  add column if not exists item_category_code text,
+  add column if not exists item_description text,
+  add column if not exists item_unit text,
+  add column if not exists item_quantity numeric(16,3) not null default 1 check (item_quantity >= 0),
+  add column if not exists item_unit_price numeric(16,2) not null default 0 check (item_unit_price >= 0),
+  add column if not exists item_discount numeric(16,2) not null default 0 check (item_discount >= 0),
+  add column if not exists subtotal numeric(16,2) not null default 0 check (subtotal >= 0),
+  add column if not exists net_amount numeric(16,2) not null default 0 check (net_amount >= 0);
+
+update public.extra_sales
+set seller_station_name = coalesce(seller_station_name, station_owner_name),
+    seller_tax_number = coalesce(seller_tax_number, tax_number),
+    seller_commercial_registration_number = coalesce(seller_commercial_registration_number, commercial_registration_number),
+    seller_registration_number = coalesce(seller_registration_number, registration_number),
+    seller_email = coalesce(seller_email, email),
+    seller_phone = coalesce(seller_phone, phone),
+    item_description = coalesce(item_description, sale_description),
+    item_name = coalesce(item_name, sale_description),
+    item_quantity = case when item_quantity = 1 then 1 else item_quantity end,
+    item_unit_price = case when item_unit_price = 0 then amount else item_unit_price end,
+    subtotal = case when subtotal = 0 then amount else subtotal end,
+    net_amount = case when net_amount = 0 then amount else net_amount end;
