@@ -20,6 +20,7 @@ export const TXN_TYPES = [
   'variance_writeoff',
   'transfer_in',
   'transfer_out',
+  'tank_transfer',
   'sensor_correction',
 ] as const;
 export type TxnType = (typeof TXN_TYPES)[number];
@@ -95,6 +96,7 @@ export const TXN_TYPE_LABELS: Record<TxnType, string> = {
   variance_writeoff: 'Variance',
   transfer_in: 'Transfer in',
   transfer_out: 'Transfer out',
+  tank_transfer: 'Internal tank transfer',
   sensor_correction: 'Sensor correction',
 };
 

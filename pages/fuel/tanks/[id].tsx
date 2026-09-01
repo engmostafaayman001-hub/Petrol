@@ -11,7 +11,7 @@ import { formatMoney as formatMoneyValue, formatQuantity } from '../../../src/co
 
 const qty = (value: number) => formatQuantity(value, 3);
 const money = (value: number) => formatMoneyValue(value);
-const movementLabel: Record<string, string> = { sale: 'بيع', delivery: 'توريد', adjustment: 'تسوية', variance_writeoff: 'خصم فرق', reversal: 'إلغاء' };
+const movementLabel: Record<string, string> = { sale: 'بيع', delivery: 'توريد', adjustment: 'تسوية', variance_writeoff: 'خصم فرق', tank_transfer: 'نقل داخلي', reversal: 'إلغاء' };
 export default function TankDetails() {
   const router = useRouter(); const { user } = useRequireAuth(); const stationId = useCurrentStationId(user?.id ?? null); const tankId = typeof router.query.id === 'string' ? router.query.id : '';
   const [tank, setTank] = useState<any>(null); const [deliveries, setDeliveries] = useState<any[]>([]); const [sales, setSales] = useState<any[]>([]); const [movements, setMovements] = useState<any[]>([]); const [meters, setMeters] = useState<any[]>([]); const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');

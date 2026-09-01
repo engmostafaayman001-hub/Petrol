@@ -16,7 +16,7 @@ const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).for
 const money = (value: number) => formatMoneyValue(value);
 const price = (value: number, withCurrency = true) => formatPrice(value, withCurrency);
 const qty = (value: number) => formatQuantity(value, 3);
-const movementLabel: Record<string, string> = { sale: 'بيع', delivery: 'توريد', adjustment: 'تسوية', variance_writeoff: 'خصم فرق', reversal: 'إلغاء' };
+const movementLabel: Record<string, string> = { sale: 'بيع', delivery: 'توريد', adjustment: 'تسوية', variance_writeoff: 'خصم فرق', tank_transfer: 'نقل داخلي', reversal: 'إلغاء' };
 
 export default function FuelPage() {
   const { user } = useRequireAuth();

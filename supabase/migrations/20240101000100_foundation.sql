@@ -34,6 +34,7 @@ create type public.txn_type as enum (
   'variance_writeoff',
   'transfer_in',
   'transfer_out',
+  'tank_transfer',
   'sensor_correction'
 );
 
