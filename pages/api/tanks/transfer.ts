@@ -8,7 +8,7 @@ function parseQuantity(value: unknown): number | null {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'TRANSFER_METHOD_NOT_ALLOWED', message: 'الطريقة غير مسموحة.' });
 
   try {
     const payload = req.body || {};
@@ -22,12 +22,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!stationId || !sourceTankId || !destinationTankId) {
       console.warn('tank transfer validation failed: missing ids', { stationId, sourceTankId, destinationTankId, quantity });
-      return res.status(400).json({ error: 'يجب تحديد المحطة والخزان المصدر والخزان المستهدف.' });
+      return res.status(400).json({
+        error: 'TRANSFER_VALIDATION_ERROR',
+        message: 'يجب تحديد المحطة والخزان المصدر والخزان المستهدف.',
+        ...(process.env.NODE_ENV === 'development' ? { details: { stationId, sourceTankId, destinationTankId, quantity } } : {}),
+      });
     }
 
     if (!Number.isFinite(quantity) || quantity! <= 0) {
       console.warn('tank transfer validation failed: invalid quantity', { stationId, sourceTankId, destinationTankId, quantity });
-      return res.status(400).json({ error: 'يجب إدخال كمية نقل صحيحة أكبر من صفر.' });
+      return res.status(400).json({
+        error: 'TRANSFER_VALIDATION_ERROR',
+        message: 'يجب إدخال كمية نقل صحيحة أكبر من صفر.',
+        ...(process.env.NODE_ENV === 'development' ? { details: { stationId, sourceTankId, destinationTankId, quantity } } : {}),
+      });
     }
 
     const actor = await requireStationOperator(req, stationId);
@@ -41,7 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .maybeSingle();
 
     if (sourceError) throw sourceError;
-    if (!sourceTank) return res.status(404).json({ error: 'الخزان المصدر غير موجود.' });
+    if (!sourceTank) return res.status(404).json({ error: 'TRANSFER_NOT_FOUND', message: 'الخزان المصدر غير موجود.' });
 
     const { data: destinationTank, error: destinationError } = await supabase
       .from('tanks')
@@ -51,21 +59,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .maybeSingle();
 
     if (destinationError) throw destinationError;
-    if (!destinationTank) return res.status(404).json({ error: 'الخزان المستهدف غير موجود.' });
+    if (!destinationTank) return res.status(404).json({ error: 'TRANSFER_NOT_FOUND', message: 'الخزان المستهدف غير موجود.' });
 
     if (sourceTankId === destinationTankId) {
       console.warn('tank transfer validation failed: same tank', { stationId, sourceTankId, destinationTankId });
-      return res.status(400).json({ error: 'لا يمكن النقل من الخزان إلى نفسه. اختر خزانًا آخر.' });
+      return res.status(400).json({
+        error: 'TRANSFER_VALIDATION_ERROR',
+        message: 'لا يمكن النقل من الخزان إلى نفسه. اختر خزانًا آخر.',
+      });
     }
 
     if (!sourceTank.is_active) {
       console.warn('tank transfer validation failed: source inactive', { stationId, sourceTankId, sourceTank });
-      return res.status(400).json({ error: 'لا يمكن استخدام خزان غير نشط في عملية النقل.' });
+      return res.status(400).json({
+        error: 'TRANSFER_VALIDATION_ERROR',
+        message: 'لا يمكن استخدام خزان غير نشط في عملية النقل.',
+      });
     }
 
     if (!destinationTank.is_active) {
       console.warn('tank transfer validation failed: destination inactive', { stationId, destinationTankId, destinationTank });
-      return res.status(400).json({ error: 'لا يمكن استخدام خزان غير نشط في عملية النقل.' });
+      return res.status(400).json({
+        error: 'TRANSFER_VALIDATION_ERROR',
+        message: 'لا يمكن استخدام خزان غير نشط في عملية النقل.',
+      });
     }
 
     const { data: sourceBalanceRow } = await supabase
@@ -77,7 +94,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const sourceBalance = Number(sourceBalanceRow?.quantity ?? 0);
     if (sourceBalance < quantity!) {
       console.warn('tank transfer validation failed: insufficient source balance', { stationId, sourceTankId, quantity, sourceBalance });
-      return res.status(400).json({ error: 'الرصيد المتاح في الخزان المصدر غير كافٍ.' });
+      return res.status(400).json({
+        error: 'TRANSFER_VALIDATION_ERROR',
+        message: 'الرصيد المتاح في الخزان المصدر غير كافٍ.',
+        ...(process.env.NODE_ENV === 'development' ? { details: { stationId, sourceTankId, destinationTankId, quantity, sourceBalance } } : {}),
+      });
     }
 
     const { data, error } = await supabase.rpc('fn_create_tank_transfer', {
@@ -92,7 +113,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     if (error) {
-      return res.status(400).json({ error: error.message || 'تعذر تنفيذ النقل بين الخزانات.' });
+      return res.status(400).json({
+        error: 'TRANSFER_RPC_ERROR',
+        message: error.message || 'تعذر تنفيذ النقل بين الخزانات.',
+        ...(process.env.NODE_ENV === 'development' ? { details: { stationId, sourceTankId, destinationTankId, quantity, requestToken } } : {}),
+      });
     }
 
     return res.status(200).json({
@@ -103,6 +128,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (error: any) {
     const message = error?.message || 'تعذر تنفيذ النقل بين الخزانات.';
     const status = /جلسة|تسجيل الدخول|صلاحية|المحطة/i.test(message) ? 401 : 500;
-    return res.status(status).json({ error: message });
+    return res.status(status).json({
+      error: status === 401 ? 'TRANSFER_AUTH_ERROR' : 'TRANSFER_FATAL_ERROR',
+      message,
+    });
   }
 }
