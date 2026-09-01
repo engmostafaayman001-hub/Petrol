@@ -75,13 +75,19 @@ export default function TanksPage() {
         body: JSON.stringify({ station_id: stationId, source_tank_id: source?.tank_id, destination_tank_id: destination?.tank_id, quantity: qty, note: transferForm.note.trim() || null, business_date: new Date().toISOString().slice(0, 10), request_token: requestToken }),
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'تعذر تنفيذ النقل.');
+      if (!response.ok) {
+        const backendMessage = typeof result?.message === 'string' && result.message.trim() ? result.message : 'تعذر تنفيذ النقل.';
+        const backendError = typeof result?.error === 'string' && result.error.trim() ? result.error : 'TRANSFER_ERROR';
+        throw new Error(`${backendError}: ${backendMessage}`);
+      }
       setTransferMessage(`تم نقل ${format(qty)} لتر بنجاح من ${source?.tank_name || source?.tank_code || 'الخزان'} إلى ${destination?.tank_name || destination?.tank_code || 'الخزان'}.`);
       setTransferForm({ sourceTankId: '', destinationTankId: '', quantity: '', note: '' });
       setTransferOpen(false);
       await load();
     } catch (error: any) {
-      setTransferMessage(error.message || 'تعذر تنفيذ النقل.');
+      const message = typeof error?.message === 'string' ? error.message : 'تعذر تنفيذ النقل.';
+      const finalMessage = message.includes(':') ? message.split(':').slice(1).join(':').trim() || message : message;
+      setTransferMessage(finalMessage);
     } finally {
       setIsSubmitting(false);
     }
