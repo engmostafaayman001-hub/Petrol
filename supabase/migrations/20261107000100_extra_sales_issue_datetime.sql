@@ -1,4 +1,4 @@
-﻿-- Keep the invoice issue timestamp distinct from the system creation timestamp.
+-- Keep the invoice issue timestamp distinct from the system creation timestamp.
 alter table public.extra_sales
   add column if not exists date_time_issued timestamptz;
 
