@@ -52,7 +52,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const dateTimeIssued = parseIssueDateTime(body.date_time_issued);
     if (!dateTimeIssued) return res.status(400).json({ error: 'Enter a valid invoice issue date and time.' });
     if (Date.parse(dateTimeIssued) > Date.now()) return res.status(400).json({ error: 'Invoice issue date and time cannot be in the future.' });
-    if (Date.now() - Date.parse(dateTimeIssued) > 72 * 60 * 60 * 1000) return res.status(400).json({ error: 'Invoice date exceeds 72 hours; late submission may require ETA activation for this taxpayer.' });
     const sellerStationName = FIXED_SELLER.name;
     const submittedItems = Array.isArray(body.items) ? body.items : [body];
     const items: InvoiceItem[] = submittedItems.map((raw: any) => {
