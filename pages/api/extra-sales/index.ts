@@ -15,6 +15,16 @@ const FIXED_SELLER = {
 } as const;
 type InvoiceItem = { item_code: string | null; item_name: string; item_category_code: string | null; item_description: string | null; item_unit: string; item_quantity: number; item_unit_price: number; item_discount: number; subtotal: number; net_amount: number };
 
+function parseIssueDateTime(value: unknown) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
+  const [datePart, timePart] = value.split('T');
+  const [year, month, day] = datePart!.split('-').map(Number);
+  const [hour, minute] = timePart!.split(':').map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!, hour!, minute!));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month! - 1 || date.getUTCDate() !== day || hour! > 23 || minute! > 59) return null;
+  return new Date(date.getTime() - 2 * 60 * 60 * 1000).toISOString();
+}
+
 function invoiceNumber() {
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
   return `EX-${stamp}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
@@ -39,6 +49,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (req.method !== 'POST') return res.status(405).json({ error: 'الطريقة غير مسموحة.' });
     const body = req.body || {};
+    const dateTimeIssued = parseIssueDateTime(body.date_time_issued);
+    if (!dateTimeIssued) return res.status(400).json({ error: '???? ??????? ?????? ?????? ???????.' });
+    if (Date.parse(dateTimeIssued) > Date.now()) return res.status(400).json({ error: '?? ???? ?? ???? ????? ???? ????? ???????? ?? ????????.' });
+    if (Date.now() - Date.parse(dateTimeIssued) > 72 * 60 * 60 * 1000) return res.status(400).json({ error: '????? ????? ??????? ????? ??????? ??????? ?????????? ??? ETA (72 ????). ???? ??????? ?????? ??? ????????.' });
     const sellerStationName = FIXED_SELLER.name;
     const submittedItems = Array.isArray(body.items) ? body.items : [body];
     const items: InvoiceItem[] = submittedItems.map((raw: any) => {
@@ -90,6 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       subtotal,
       net_amount: netAmount,
       items,
+      date_time_issued: dateTimeIssued,
       created_by: operator.id,
     }).select('*').single();
     if (error) return res.status(500).json({ error: error.message });
